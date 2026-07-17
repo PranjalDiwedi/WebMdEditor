@@ -32,9 +32,18 @@ export class GoogleOAuth {
 
   private loadStoredTokens(): void {
     const stored = getStoredTokens('google');
-    if (stored) {
-      this.tokens = stored;
-      this.user = stored.user;
+    if (stored && typeof stored.accessToken === 'string') {
+      this.tokens = {
+        accessToken: stored.accessToken,
+        refreshToken: typeof stored.refreshToken === 'string' ? stored.refreshToken : undefined,
+        expiresAt: typeof stored.expiresAt === 'number' ? stored.expiresAt : 0,
+      };
+      this.user = (stored.user as User) || null;
+      if (this.tokens.expiresAt && this.tokens.expiresAt <= Date.now()) {
+        this.tokens = null;
+        this.user = null;
+        clearStoredTokens('google');
+      }
     }
   }
 
@@ -56,7 +65,7 @@ export class GoogleOAuth {
       this.tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: AUTH_SCOPES,
-        callback: async (tokenResponse: { access_token?: string; error?: string }) => {
+        callback: async (tokenResponse: { access_token?: string; error?: string; expires_in?: number }) => {
           try {
             if (tokenResponse.error || !tokenResponse.access_token) {
               reject(new Error(tokenResponse.error || 'No access token received'));
@@ -65,9 +74,13 @@ export class GoogleOAuth {
 
             const user = await this.fetchUserInfo(tokenResponse.access_token);
 
+            // Set token expiration (default to 1 hour if not provided)
+            const expiresIn = tokenResponse.expires_in || 3600;
+            const expiresAt = Date.now() + (expiresIn * 1000);
+
             this.tokens = {
               accessToken: tokenResponse.access_token,
-              expiresAt: Date.now() + 3600 * 1000,
+              expiresAt: expiresAt,
             };
 
             this.user = { ...user, provider: 'google' };

@@ -4,6 +4,8 @@ import { StorageProvider } from '../storage/StorageProvider';
 import { getFromStorage, setToStorage } from '../utils/storageHelpers';
 import { STORAGE_KEYS } from '../config/constants';
 import { stripMarkdown } from '../utils/markdownParser';
+import { sanitizeFileContent } from '../utils/htmlSanitizer';
+import { toUserError } from '../utils/securityErrors';
 
 export function useFileManagement(storageProvider: StorageProvider | null): FileState & FileOperations & {
   setSearchQuery: (query: string) => void;
@@ -49,7 +51,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         );
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load files');
+          setError(toUserError(err, 'Failed to load files'));
         }
       } finally {
         if (!cancelled) {
@@ -85,7 +87,8 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     setError(null);
 
     try {
-      const content = await storageProvider.readFile(fileId);
+      const rawContent = await storageProvider.readFile(fileId);
+      const content = sanitizeFileContent(rawContent);
       const existing = recentFiles.find((f) => f.id === fileId);
 
       let markdownFile: MarkdownFile;
@@ -118,7 +121,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       setCurrentFile(markdownFile);
       saveToRecentFiles(markdownFile);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to open file');
+      setError(toUserError(err, 'Failed to open file'));
     } finally {
       setIsLoading(false);
     }
@@ -146,7 +149,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       setCurrentFile(updatedFile);
       saveToRecentFiles(updatedFile);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save file');
+      setError(toUserError(err, 'Failed to save file'));
     } finally {
       setIsLoading(false);
     }
@@ -179,7 +182,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       setCurrentFile(markdownFile);
       saveToRecentFiles(markdownFile);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create file');
+      setError(toUserError(err, 'Failed to create file'));
     } finally {
       setIsLoading(false);
     }

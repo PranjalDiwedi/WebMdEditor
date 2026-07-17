@@ -3,17 +3,25 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
-import { marked } from 'marked';
+import { sanitizeHTML, sanitizeMarkdown, isContentSafe } from '../utils/htmlSanitizer';
 import { useEffect } from 'react';
 
 export function useEditor(content: string, onUpdate: (content: string) => void) {
-  // Convert markdown to HTML for TipTap
+  // Convert markdown to HTML for TipTap with sanitization
   const convertMarkdownToHtml = (markdown: string): string => {
     try {
-      return marked(markdown) as string;
+      // First check if content is safe
+      if (!isContentSafe(markdown)) {
+        console.warn('Content contains potentially dangerous patterns');
+        // Return a safe default or empty content
+        return '<p>Content contains potentially dangerous elements and has been blocked.</p>';
+      }
+      
+      const html = sanitizeMarkdown(markdown);
+      return html;
     } catch (error) {
       console.error('Error converting markdown to HTML:', error);
-      return markdown;
+      return '<p>Error rendering content. Please try again.</p>';
     }
   };
 
@@ -36,6 +44,17 @@ export function useEditor(content: string, onUpdate: (content: string) => void) 
         openOnClick: false,
         HTMLAttributes: {
           class: 'text-blue-500 underline cursor-pointer',
+          rel: 'noopener noreferrer',
+          target: '_blank',
+        },
+        validate: (href) => {
+          // Basic URL validation
+          try {
+            const url = new URL(href, window.location.origin);
+            return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:';
+          } catch {
+            return false;
+          }
         },
       }),
       TextAlign.configure({
@@ -52,18 +71,28 @@ export function useEditor(content: string, onUpdate: (content: string) => void) 
       },
     },
     onUpdate: ({ editor }) => {
-      // Convert HTML back to markdown for storage
-      const html = editor.getHTML();
-      // For now, we'll store the HTML and convert back to markdown when needed
-      onUpdate(html);
+      try {
+        // Get HTML from editor and sanitize it
+        const html = editor.getHTML();
+        const sanitizedHtml = sanitizeHTML(html);
+        onUpdate(sanitizedHtml);
+      } catch (error) {
+        console.error('Error updating editor content:', error);
+        onUpdate('<p>Error saving content</p>');
+      }
     },
   });
 
   // Update editor content when external content changes
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
-      const htmlContent = convertMarkdownToHtml(content);
-      editor.commands.setContent(htmlContent, false);
+      try {
+        const htmlContent = convertMarkdownToHtml(content);
+        editor.commands.setContent(htmlContent, { emitUpdate: false });
+      } catch (error) {
+        console.error('Error setting editor content:', error);
+        editor.commands.setContent('<p>Error loading content</p>', { emitUpdate: false });
+      }
     }
   }, [content, editor]);
 

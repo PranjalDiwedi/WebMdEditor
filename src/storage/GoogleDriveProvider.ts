@@ -1,39 +1,26 @@
 import { StorageProvider } from './StorageProvider';
 import type { StorageFile } from '../types/storage';
 import { OAUTH_CONFIGS } from '../config/constants';
-import { isMarkdownFile, ensureMarkdownFileName } from '../utils/fileValidation';
+import {
+  isMarkdownFile,
+  ensureMarkdownFileName,
+  validateFileName,
+} from '../utils/fileValidation';
 import { initDriveClient, loadGisClient } from '../utils/googleScripts';
+import { RateLimiter } from '../utils/rateLimiter';
+import { toUserError, logSecurityEvent } from '../utils/securityErrors';
 
-function formatGoogleError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === 'object' && error !== null) {
-    const err = error as {
-      result?: { error?: { message?: string } };
-      error?: { message?: string } | string;
-      message?: string;
-      status?: number;
-      statusText?: string;
-    };
-    return (
-      err.result?.error?.message ||
-      (typeof err.error === 'object' ? err.error.message : err.error) ||
-      err.message ||
-      (err.status ? `HTTP ${err.status} ${err.statusText || ''}`.trim() : '') ||
-      JSON.stringify(error)
-    );
-  }
-  return String(error);
-}
+const TOKEN_SKEW_MS = 60_000; // refresh 1 minute before expiry
 
 export class GoogleDriveProvider extends StorageProvider {
   name = 'Google Drive';
   type = 'google-drive' as const;
   private tokenClient: any = null;
   private accessToken: string = '';
+  private tokenExpiresAt = 0;
   private folderId: string | null = null;
   private folderName = 'All Google Drive';
+  private readonly rateLimiter = new RateLimiter(60);
 
   setTargetFolder(folderId: string | null, folderName: string): void {
     this.folderId = folderId;
@@ -45,31 +32,81 @@ export class GoogleDriveProvider extends StorageProvider {
   }
 
   async listChildFolders(parentId: string = 'root'): Promise<Array<{ id: string; name: string }>> {
-    this.ensureReady();
+    await this.ensureReadyAsync();
 
-    const folders: Array<{ id: string; name: string }> = [];
-    let pageToken: string | undefined;
+    return this.rateLimiter.schedule(async () => {
+      const folders: Array<{ id: string; name: string }> = [];
+      let pageToken: string | undefined;
 
-    do {
-      const response = await window.gapi.client.drive.files.list({
-        q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-        fields: 'nextPageToken, files(id, name)',
-        orderBy: 'name',
-        pageSize: 100,
-        pageToken,
-      });
+      do {
+        const response = await window.gapi.client.drive.files.list({
+          q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+          fields: 'nextPageToken, files(id, name)',
+          orderBy: 'name',
+          pageSize: 100,
+          pageToken,
+        });
 
-      for (const folder of response.result.files || []) {
-        folders.push({ id: folder.id, name: folder.name });
-      }
-      pageToken = response.result.nextPageToken;
-    } while (pageToken);
+        for (const folder of response.result.files || []) {
+          folders.push({ id: folder.id, name: folder.name });
+        }
+        pageToken = response.result.nextPageToken;
+      } while (pageToken);
 
-    return folders;
+      return folders;
+    });
   }
 
   private isMarkdownDriveFile(file: { name: string; mimeType?: string }): boolean {
     return isMarkdownFile(file.name);
+  }
+
+  private applyToken(accessToken: string, expiresInSeconds = 3600): void {
+    this.accessToken = accessToken;
+    this.tokenExpiresAt = Date.now() + expiresInSeconds * 1000;
+    window.gapi.client.setToken({ access_token: this.accessToken });
+    this.isAuthenticated = true;
+  }
+
+  private isTokenExpiringSoon(): boolean {
+    return !this.accessToken || Date.now() >= this.tokenExpiresAt - TOKEN_SKEW_MS;
+  }
+
+  private async silentRefreshToken(): Promise<void> {
+    if (!this.tokenClient) {
+      throw new Error('Not authenticated with Google Drive');
+    }
+
+    return new Promise((resolve, reject) => {
+      const previousCallback = this.tokenClient.callback;
+      this.tokenClient.callback = (tokenResponse: {
+        access_token?: string;
+        error?: string;
+        error_description?: string;
+        expires_in?: number;
+      }) => {
+        this.tokenClient.callback = previousCallback;
+        if (tokenResponse.error || !tokenResponse.access_token) {
+          reject(
+            new Error(
+              tokenResponse.error_description ||
+                tokenResponse.error ||
+                'Google Drive session expired. Please reconnect.'
+            )
+          );
+          return;
+        }
+        this.applyToken(tokenResponse.access_token, tokenResponse.expires_in || 3600);
+        resolve();
+      };
+
+      try {
+        this.tokenClient.requestAccessToken({ prompt: '' });
+      } catch (error) {
+        this.tokenClient.callback = previousCallback;
+        reject(error);
+      }
+    });
   }
 
   async authenticate(): Promise<void> {
@@ -95,6 +132,7 @@ export class GoogleDriveProvider extends StorageProvider {
           access_token?: string;
           error?: string;
           error_description?: string;
+          expires_in?: number;
         }) => {
           if (tokenResponse.error || !tokenResponse.access_token) {
             reject(
@@ -107,9 +145,7 @@ export class GoogleDriveProvider extends StorageProvider {
             return;
           }
 
-          this.accessToken = tokenResponse.access_token;
-          window.gapi.client.setToken({ access_token: this.accessToken });
-          this.isAuthenticated = true;
+          this.applyToken(tokenResponse.access_token, tokenResponse.expires_in || 3600);
           resolve();
         },
         error_callback: (error: { type?: string; message?: string }) => {
@@ -127,23 +163,29 @@ export class GoogleDriveProvider extends StorageProvider {
     });
   }
 
-  private ensureReady(): void {
-    if (!this.isAuthenticated || !this.accessToken) {
+  private async ensureReadyAsync(): Promise<void> {
+    if (!this.isAuthenticated) {
       throw new Error('Not authenticated with Google Drive');
     }
-    window.gapi.client.setToken({ access_token: this.accessToken });
+
+    if (this.isTokenExpiringSoon()) {
+      await this.silentRefreshToken();
+    } else {
+      window.gapi.client.setToken({ access_token: this.accessToken });
+    }
   }
 
   async listFiles(): Promise<StorageFile[]> {
-    this.ensureReady();
+    await this.ensureReadyAsync();
 
     try {
       if (this.folderId) {
-        return this.listFilesInFolderRecursive(this.folderId);
+        return await this.listFilesInFolderRecursive(this.folderId);
       }
-      return this.listAllMarkdownFiles();
+      return await this.listAllMarkdownFiles();
     } catch (error) {
-      throw new Error(`Failed to list Google Drive files: ${formatGoogleError(error)}`);
+      logSecurityEvent('drive.listFiles', error);
+      throw new Error(toUserError(error, 'Failed to list Google Drive files'));
     }
   }
 
@@ -162,14 +204,16 @@ export class GoogleDriveProvider extends StorageProvider {
       ")";
 
     do {
-      const response = await window.gapi.client.drive.files.list({
-        q: query,
-        fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, size, parents)',
-        orderBy: 'modifiedTime desc',
-        pageSize: 100,
-        pageToken,
-        spaces: 'drive',
-      });
+      const response = await this.rateLimiter.schedule(async () =>
+        window.gapi.client.drive.files.list({
+          q: query,
+          fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, size, parents)',
+          orderBy: 'modifiedTime desc',
+          pageSize: 100,
+          pageToken,
+          spaces: 'drive',
+        })
+      );
 
       for (const file of response.result.files || []) {
         if (this.isMarkdownDriveFile(file)) {
@@ -200,13 +244,15 @@ export class GoogleDriveProvider extends StorageProvider {
       let pageToken: string | undefined;
 
       do {
-        const response = await window.gapi.client.drive.files.list({
-          q: `'${currentFolderId}' in parents and trashed=false`,
-          fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, size, parents)',
-          orderBy: 'name',
-          pageSize: 100,
-          pageToken,
-        });
+        const response = await this.rateLimiter.schedule(async () =>
+          window.gapi.client.drive.files.list({
+            q: `'${currentFolderId}' in parents and trashed=false`,
+            fields: 'nextPageToken, files(id, name, mimeType, modifiedTime, size, parents)',
+            orderBy: 'name',
+            pageSize: 100,
+            pageToken,
+          })
+        );
 
         for (const file of response.result.files || []) {
           if (file.mimeType === 'application/vnd.google-apps.folder') {
@@ -232,134 +278,143 @@ export class GoogleDriveProvider extends StorageProvider {
   }
 
   async readFile(fileId: string): Promise<string> {
-    this.ensureReady();
+    await this.ensureReadyAsync();
 
     try {
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
-        {
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        const details = await response.json().catch(() => null);
-        throw new Error(
-          details?.error?.message || `Failed to read file (${response.status})`
+      return await this.rateLimiter.schedule(async () => {
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+          {
+            headers: {
+              Authorization: `Bearer ${this.accessToken}`,
+            },
+          }
         );
-      }
 
-      return await response.text();
+        if (!response.ok) {
+          throw new Error(`Failed to read file (${response.status})`);
+        }
+
+        return await response.text();
+      });
     } catch (error) {
-      throw new Error(`Failed to read Google Drive file: ${formatGoogleError(error)}`);
+      logSecurityEvent('drive.readFile', error);
+      throw new Error(toUserError(error, 'Failed to read Google Drive file'));
     }
   }
 
   async writeFile(fileId: string, content: string): Promise<void> {
-    this.ensureReady();
+    await this.ensureReadyAsync();
 
     try {
-      const response = await fetch(
-        `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=media`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-            'Content-Type': 'text/markdown; charset=UTF-8',
-          },
-          body: content,
-        }
-      );
-
-      if (!response.ok) {
-        const details = await response.json().catch(() => null);
-        throw new Error(
-          details?.error?.message || `Upload failed (${response.status})`
+      await this.rateLimiter.schedule(async () => {
+        const response = await fetch(
+          `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=media`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${this.accessToken}`,
+              'Content-Type': 'text/markdown; charset=UTF-8',
+            },
+            body: content,
+          }
         );
-      }
+
+        if (!response.ok) {
+          throw new Error(`Upload failed (${response.status})`);
+        }
+      });
     } catch (error) {
-      throw new Error(`Failed to write Google Drive file: ${formatGoogleError(error)}`);
+      logSecurityEvent('drive.writeFile', error);
+      throw new Error(toUserError(error, 'Failed to write Google Drive file'));
     }
   }
 
   async createFile(name: string, content: string, path?: string): Promise<StorageFile> {
-    this.ensureReady();
+    await this.ensureReadyAsync();
+
+    const validation = validateFileName(name);
+    if (!validation.valid) {
+      throw new Error(validation.error || 'Invalid file name');
+    }
 
     const fileName = ensureMarkdownFileName(name);
 
     try {
-      const metadata: { name: string; mimeType: string; parents?: string[] } = {
-        name: fileName,
-        mimeType: 'text/markdown',
-      };
-      const parentId = path || this.folderId;
-      if (parentId) {
-        metadata.parents = [parentId];
-      }
-
-      const boundary = '-------md_editor_boundary';
-      const body =
-        `--${boundary}\r\n` +
-        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-        `${JSON.stringify(metadata)}\r\n` +
-        `--${boundary}\r\n` +
-        'Content-Type: text/markdown; charset=UTF-8\r\n\r\n' +
-        `${content}\r\n` +
-        `--${boundary}--`;
-
-      const response = await fetch(
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime,size,parents',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-            'Content-Type': `multipart/related; boundary=${boundary}`,
-          },
-          body,
+      return await this.rateLimiter.schedule(async () => {
+        const metadata: { name: string; mimeType: string; parents?: string[] } = {
+          name: fileName,
+          mimeType: 'text/markdown',
+        };
+        const parentId = path || this.folderId;
+        if (parentId) {
+          metadata.parents = [parentId];
         }
-      );
 
-      if (!response.ok) {
-        const details = await response.json().catch(() => null);
-        throw new Error(
-          details?.error?.message || `Create failed (${response.status})`
+        const boundary = '-------md_editor_boundary';
+        const body =
+          `--${boundary}\r\n` +
+          'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+          `${JSON.stringify(metadata)}\r\n` +
+          `--${boundary}\r\n` +
+          'Content-Type: text/markdown; charset=UTF-8\r\n\r\n' +
+          `${content}\r\n` +
+          `--${boundary}--`;
+
+        const response = await fetch(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime,size,parents',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${this.accessToken}`,
+              'Content-Type': `multipart/related; boundary=${boundary}`,
+            },
+            body,
+          }
         );
-      }
 
-      const result = await response.json();
-      return this.convertToStorageFile(
-        result.id,
-        result.name || fileName,
-        content,
-        path || this.folderId || '/',
-        result.modifiedTime ? new Date(result.modifiedTime) : new Date(),
-        Number(result.size) || content.length
-      );
+        if (!response.ok) {
+          throw new Error(`Create failed (${response.status})`);
+        }
+
+        const result = await response.json();
+        return this.convertToStorageFile(
+          result.id,
+          result.name || fileName,
+          content,
+          path || this.folderId || '/',
+          result.modifiedTime ? new Date(result.modifiedTime) : new Date(),
+          Number(result.size) || content.length
+        );
+      });
     } catch (error) {
-      throw new Error(`Failed to create Google Drive file: ${formatGoogleError(error)}`);
+      logSecurityEvent('drive.createFile', error);
+      throw new Error(toUserError(error, 'Failed to create Google Drive file'));
     }
   }
 
   async deleteFile(fileId: string): Promise<void> {
-    this.ensureReady();
+    await this.ensureReadyAsync();
 
     try {
-      await window.gapi.client.drive.files.delete({ fileId });
+      await this.rateLimiter.schedule(async () =>
+        window.gapi.client.drive.files.delete({ fileId })
+      );
     } catch (error) {
-      throw new Error(`Failed to delete Google Drive file: ${formatGoogleError(error)}`);
+      logSecurityEvent('drive.deleteFile', error);
+      throw new Error(toUserError(error, 'Failed to delete Google Drive file'));
     }
   }
 
   async disconnect(): Promise<void> {
-    if (this.tokenClient) {
+    if (this.accessToken && window.google?.accounts?.oauth2) {
       window.google.accounts.oauth2.revoke(this.accessToken);
     }
     if (window.gapi?.client) {
       window.gapi.client.setToken(null);
     }
     this.accessToken = '';
+    this.tokenExpiresAt = 0;
     this.isAuthenticated = false;
   }
 }

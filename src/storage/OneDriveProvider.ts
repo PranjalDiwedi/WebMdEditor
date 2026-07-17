@@ -1,7 +1,7 @@
 import { StorageProvider } from './StorageProvider';
 import type { StorageFile } from '../types/storage';
 import { OAUTH_CONFIGS } from '../config/constants';
-import { isMarkdownFile } from '../utils/fileValidation';
+import { isMarkdownFile, ensureMarkdownFileName, validateFileName } from '../utils/fileValidation';
 import { PublicClientApplication } from '@azure/msal-browser';
 import { Client } from '@microsoft/microsoft-graph-client';
 
@@ -103,9 +103,15 @@ export class OneDriveProvider extends StorageProvider {
       throw new Error('Not authenticated with OneDrive');
     }
 
+    const validation = validateFileName(name);
+    if (!validation.valid) {
+      throw new Error(validation.error || 'Invalid file name');
+    }
+    const fileName = ensureMarkdownFileName(name);
+
     try {
       const item = {
-        name: name,
+        name: fileName,
         file: {},
         '@microsoft.graph.conflictBehavior': 'rename'
       };
@@ -119,7 +125,7 @@ export class OneDriveProvider extends StorageProvider {
 
       return this.convertToStorageFile(
         fileId,
-        name,
+        fileName,
         content,
         path || '/',
         new Date(),

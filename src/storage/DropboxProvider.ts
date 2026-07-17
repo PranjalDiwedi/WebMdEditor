@@ -1,7 +1,7 @@
 import { StorageProvider } from './StorageProvider';
 import type { StorageFile } from '../types/storage';
 import { OAUTH_CONFIGS } from '../config/constants';
-import { isMarkdownFile } from '../utils/fileValidation';
+import { isMarkdownFile, ensureMarkdownFileName, validateFileName } from '../utils/fileValidation';
 import { Dropbox } from 'dropbox';
 
 export class DropboxProvider extends StorageProvider {
@@ -94,8 +94,14 @@ export class DropboxProvider extends StorageProvider {
       throw new Error('Not authenticated with Dropbox');
     }
 
+    const validation = validateFileName(name);
+    if (!validation.valid) {
+      throw new Error(validation.error || 'Invalid file name');
+    }
+    const fileName = ensureMarkdownFileName(name);
+
     try {
-      const fullPath = path ? `${path}/${name}` : `/${name}`;
+      const fullPath = path ? `${path}/${fileName}` : `/${fileName}`;
       const response = await this.dropbox.filesUpload({
         path: fullPath,
         contents: content,

@@ -1,6 +1,6 @@
 import { StorageProvider } from './StorageProvider';
 import type { StorageFile } from '../types/storage';
-import { isMarkdownFile, ensureMarkdownFileName } from '../utils/fileValidation';
+import { isMarkdownFile, ensureMarkdownFileName, validateFileName } from '../utils/fileValidation';
 
 const MARKDOWN_PICKER_TYPES = [
   {
@@ -158,6 +158,11 @@ export class LocalProvider extends StorageProvider {
   }
 
   async createFile(name: string, content: string, path?: string): Promise<StorageFile> {
+    const validation = validateFileName(name);
+    if (!validation.valid) {
+      throw new Error(validation.error || 'Invalid file name');
+    }
+
     const safeName = ensureMarkdownFileName(name);
 
     try {

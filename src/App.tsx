@@ -14,7 +14,7 @@ import { Modal } from './components/Modal';
 import { Button } from './components/Button';
 import { SettingsModal } from './components/SettingsModal';
 import { exportToMarkdownFile, exportToHTMLFile, printContent } from './utils/exportHelpers';
-import { ensureMarkdownFileName } from './utils/fileValidation';
+import { ensureMarkdownFileName, validateFileName } from './utils/fileValidation';
 import './App.css';
 
 function App() {
@@ -23,6 +23,7 @@ function App() {
   const [pendingDriveProvider, setPendingDriveProvider] = useState<GoogleDriveProvider | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newFileName, setNewFileName] = useState('');
+  const [createNameError, setCreateNameError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -69,11 +70,25 @@ function App() {
   }, [pendingDriveProvider]);
 
   const handleCreateFile = useCallback(async () => {
-    if (newFileName.trim()) {
-      await createFile(ensureMarkdownFileName(newFileName.trim()), '');
-      setShowCreateModal(false);
-      setNewFileName('');
+    if (!newFileName.trim()) return;
+
+    const validation = validateFileName(newFileName.trim());
+    if (!validation.valid) {
+      setCreateNameError(validation.error || 'Invalid file name');
+      return;
     }
+
+    const safeName = ensureMarkdownFileName(newFileName.trim());
+    const finalValidation = validateFileName(safeName);
+    if (!finalValidation.valid) {
+      setCreateNameError(finalValidation.error || 'Invalid file name');
+      return;
+    }
+
+    setCreateNameError(null);
+    await createFile(safeName, '');
+    setShowCreateModal(false);
+    setNewFileName('');
   }, [newFileName, createFile]);
 
   const handleSaveFile = useCallback(async () => {
@@ -287,13 +302,22 @@ function App() {
               className="file-name-input"
               placeholder="Enter file name (e.g., notes — .md added automatically)"
               value={newFileName}
-              onChange={(e) => setNewFileName(e.target.value)}
+              onChange={(e) => {
+                setNewFileName(e.target.value);
+                setCreateNameError(null);
+              }}
               autoFocus
             />
+            {createNameError && (
+              <div className="error-message">{createNameError}</div>
+            )}
             <div className="modal-actions">
               <Button
                 variant="secondary"
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setCreateNameError(null);
+                }}
               >
                 Cancel
               </Button>

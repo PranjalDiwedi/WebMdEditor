@@ -1,8 +1,8 @@
-import { marked } from 'marked';
+import { sanitizeMarkdown } from './htmlSanitizer';
 
 export function exportToHTML(markdown: string): string {
-  const htmlContent = marked(markdown);
-  
+  const htmlContent = sanitizeMarkdown(markdown);
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
