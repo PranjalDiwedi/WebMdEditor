@@ -146,7 +146,7 @@ function App() {
                 ) : (
                   <button
                     type="button"
-                    className="sign-out-button"
+                    className="sign-out-button hidden"
                     onClick={signIn}
                     disabled={authLoading}
                   >

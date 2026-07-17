@@ -94,6 +94,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
           ...existing,
           content,
           isDirty: false,
+          size: content.length
         };
       } else {
         const files = await storageProvider.listFiles();
@@ -109,7 +110,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
           provider: fileData.provider,
           modifiedAt: fileData.modifiedAt,
           createdAt: fileData.modifiedAt,
-          size: fileData.size,
+          size: content.length,
           isDirty: false,
         };
       }
@@ -138,7 +139,8 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       const updatedFile = {
         ...currentFile,
         isDirty: false,
-        modifiedAt: new Date()
+        modifiedAt: new Date(),
+        size: currentFile.content.length
       };
       
       setCurrentFile(updatedFile);
@@ -170,7 +172,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         provider: newFile.provider,
         modifiedAt: newFile.modifiedAt,
         createdAt: new Date(),
-        size: newFile.size,
+        size: content.length,
         isDirty: false
       };
 

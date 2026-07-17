@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 
 interface MainLayoutProps {
@@ -9,24 +9,82 @@ interface MainLayoutProps {
 
 export function MainLayout({ children, sidebar, header }: MainLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setSidebarCollapsed(true);
+        setMobileMenuOpen(false);
+      } else {
+        setSidebarCollapsed(false);
+      }
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const toggleSidebar = () => {
+    if (isMobile) {
+      setMobileMenuOpen(!mobileMenuOpen);
+    } else {
+      setSidebarCollapsed(!sidebarCollapsed);
+    }
+  };
 
   return (
     <div className="main-layout">
-      {header && <header className="app-header">{header}</header>}
-      
-      <div className={`layout-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-        <aside className="sidebar">
-          <div className="sidebar-header">
+      {header && (
+        <header className="app-header">
+          {isMobile && (
             <button
-              className="sidebar-toggle"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="mobile-menu-button"
+              onClick={toggleSidebar}
+              aria-label="Toggle menu"
             >
-              {sidebarCollapsed ? '→' : '←'}
+              ☰
             </button>
-            {!sidebarCollapsed && <h2>Notes</h2>}
+          )}
+          <div className="header-content">{header}</div>
+        </header>
+      )}
+      
+      <div className={`layout-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${isMobile ? 'mobile-view' : ''} ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}>
+        {isMobile && mobileMenuOpen && (
+          <div 
+            className="mobile-sidebar-overlay"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+        )}
+        
+        <aside className={`sidebar ${isMobile ? 'mobile-sidebar' : ''}`}>
+          <div className="sidebar-header">
+            {!isMobile && (
+              <button
+                className="sidebar-toggle"
+                onClick={toggleSidebar}
+                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {sidebarCollapsed ? '→' : '←'}
+              </button>
+            )}
+            <h2>Notes</h2>
+            {isMobile && (
+              <button
+                className="mobile-close-button"
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu"
+              >
+                ✕
+              </button>
+            )}
           </div>
-          {!sidebarCollapsed && sidebar}
+          {(!sidebarCollapsed || mobileMenuOpen) && sidebar}
         </aside>
 
         <main className="main-content">
