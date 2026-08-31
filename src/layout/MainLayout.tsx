@@ -5,6 +5,8 @@ interface MainLayoutProps {
   children: ReactNode;
   sidebar: ReactNode;
   header?: ReactNode;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export function MainLayout({ children, sidebar, header }: MainLayoutProps) {
@@ -39,20 +41,7 @@ export function MainLayout({ children, sidebar, header }: MainLayoutProps) {
 
   return (
     <div className="main-layout">
-      {header && (
-        <header className="app-header">
-          {isMobile && (
-            <button
-              className="mobile-menu-button"
-              onClick={toggleSidebar}
-              aria-label="Toggle menu"
-            >
-              ☰
-            </button>
-          )}
-          <div className="header-content">{header}</div>
-        </header>
-      )}
+      {header}
       
       <div className={`layout-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${isMobile ? 'mobile-view' : ''} ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}>
         {isMobile && mobileMenuOpen && (
@@ -63,28 +52,21 @@ export function MainLayout({ children, sidebar, header }: MainLayoutProps) {
         )}
         
         <aside className={`sidebar ${isMobile ? 'mobile-sidebar' : ''}`}>
-          <div className="sidebar-header">
-            {!isMobile && (
+          {(!sidebarCollapsed || isMobile) ? (
+            sidebar
+          ) : (
+            <div className="sidebar-rail">
               <button
-                className="sidebar-toggle"
+                className="sidebar-rail-btn"
                 onClick={toggleSidebar}
-                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                title="Expand sidebar (⌘B)"
               >
-                {sidebarCollapsed ? '→' : '←'}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
               </button>
-            )}
-            <h2>Notes</h2>
-            {isMobile && (
-              <button
-                className="mobile-close-button"
-                onClick={() => setMobileMenuOpen(false)}
-                aria-label="Close menu"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          {(!sidebarCollapsed || mobileMenuOpen) && sidebar}
+            </div>
+          )}
         </aside>
 
         <main className="main-content">

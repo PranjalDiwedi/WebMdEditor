@@ -84,13 +84,13 @@ export function downloadFile(content: string, filename: string, mimeType: string
 }
 
 export function exportToMarkdownFile(content: string, filename: string): void {
-  downloadFile(content, filename, 'text/markdown');
+  downloadFile(content, filename, 'text/markdown;charset=utf-8');
 }
 
 export function exportToHTMLFile(content: string, filename: string): void {
   const html = exportToHTML(content);
   const htmlFilename = filename.replace(/\.md$/, '.html');
-  downloadFile(html, htmlFilename, 'text/html');
+  downloadFile(html, htmlFilename, 'text/html;charset=utf-8');
 }
 
 export function printContent(content: string): void {

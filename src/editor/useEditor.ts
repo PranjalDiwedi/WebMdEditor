@@ -3,27 +3,35 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
-import { sanitizeHTML, sanitizeMarkdown, isContentSafe } from '../utils/htmlSanitizer';
-import { useEffect } from 'react';
+import { Markdown } from 'tiptap-markdown';
+import { sanitizeFileContent } from '../utils/htmlSanitizer';
+import { useEffect, useRef } from 'react';
+
+/**
+ * Extracts formatted markdown string from TipTap editor instance.
+ */
+function extractMarkdown(editor: unknown): string {
+  if (!editor || typeof editor !== 'object') return '';
+  const ed = editor as {
+    getMarkdown?: () => string;
+    storage?: { markdown?: { getMarkdown?: () => string } };
+    getHTML?: () => string;
+  };
+
+  if (typeof ed.getMarkdown === 'function') {
+    return ed.getMarkdown();
+  }
+  if (ed.storage?.markdown && typeof ed.storage.markdown.getMarkdown === 'function') {
+    return ed.storage.markdown.getMarkdown();
+  }
+  if (typeof ed.getHTML === 'function') {
+    return ed.getHTML();
+  }
+  return '';
+}
 
 export function useEditor(content: string, onUpdate: (content: string) => void) {
-  // Convert markdown to HTML for TipTap with sanitization
-  const convertMarkdownToHtml = (markdown: string): string => {
-    try {
-      // First check if content is safe
-      if (!isContentSafe(markdown)) {
-        console.warn('Content contains potentially dangerous patterns');
-        // Return a safe default or empty content
-        return '<p>Content contains potentially dangerous elements and has been blocked.</p>';
-      }
-      
-      const html = sanitizeMarkdown(markdown);
-      return html;
-    } catch (error) {
-      console.error('Error converting markdown to HTML:', error);
-      return '<p>Error rendering content. Please try again.</p>';
-    }
-  };
+  const isUpdatingFromExternal = useRef(false);
 
   const editor = useTipTapEditor({
     extensions: [
@@ -63,35 +71,53 @@ export function useEditor(content: string, onUpdate: (content: string) => void) 
       Placeholder.configure({
         placeholder: 'Start writing your markdown...',
       }),
+      Markdown.configure({
+        html: true,
+        tightLists: true,
+        bulletListMarker: '-',
+        transformPastedText: true,
+        transformCopiedText: true,
+      }),
     ],
-    content: convertMarkdownToHtml(content),
+    content: sanitizeFileContent(content),
     editorProps: {
       attributes: {
         class: 'tiptap-editor',
       },
     },
     onUpdate: ({ editor }) => {
+      if (isUpdatingFromExternal.current) return;
       try {
-        // Get HTML from editor and sanitize it
-        const html = editor.getHTML();
-        const sanitizedHtml = sanitizeHTML(html);
-        onUpdate(sanitizedHtml);
+        const markdown = extractMarkdown(editor);
+        onUpdate(markdown);
       } catch (error) {
         console.error('Error updating editor content:', error);
-        onUpdate('<p>Error saving content</p>');
+        onUpdate(editor.getText() || '');
       }
     },
   });
 
-  // Update editor content when external content changes
+  // Update editor content when external content changes (e.g. file selection)
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
+    if (!editor) return;
+
+    const currentMarkdown = extractMarkdown(editor);
+    if (content !== currentMarkdown) {
+      isUpdatingFromExternal.current = true;
       try {
-        const htmlContent = convertMarkdownToHtml(content);
-        editor.commands.setContent(htmlContent, { emitUpdate: false });
+        const safeContent = sanitizeFileContent(content);
+        (editor.commands as any).setContent(safeContent, {
+          contentType: 'markdown',
+          emitUpdate: false,
+        });
       } catch (error) {
         console.error('Error setting editor content:', error);
-        editor.commands.setContent('<p>Error loading content</p>', { emitUpdate: false });
+        (editor.commands as any).setContent(content || '', {
+          contentType: 'markdown',
+          emitUpdate: false,
+        });
+      } finally {
+        isUpdatingFromExternal.current = false;
       }
     }
   }, [content, editor]);

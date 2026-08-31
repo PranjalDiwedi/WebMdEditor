@@ -6,10 +6,13 @@ import { STORAGE_KEYS } from '../config/constants';
 import { stripMarkdown } from '../utils/markdownParser';
 import { sanitizeFileContent } from '../utils/htmlSanitizer';
 import { toUserError } from '../utils/securityErrors';
+import { ensureMarkdownFileName } from '../utils/fileValidation';
+import { exportToMarkdownFile } from '../utils/exportHelpers';
 
 export function useFileManagement(storageProvider: StorageProvider | null): FileState & FileOperations & {
   setSearchQuery: (query: string) => void;
   updateFileContent: (content: string) => void;
+  createDraft: (name: string, content: string) => void;
 } {
   const [currentFile, setCurrentFile] = useState<MarkdownFile | null>(null);
   const [recentFiles, setRecentFiles] = useState<MarkdownFile[]>([]);
@@ -23,8 +26,6 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
   useEffect(() => {
     if (!storageProvider?.isAuthenticated) {
-      setRecentFiles([]);
-      setCurrentFile(null);
       return;
     }
 
@@ -43,8 +44,8 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
             content: file.content || '',
             path: file.path,
             provider: file.provider,
-            modifiedAt: file.modifiedAt,
-            createdAt: file.modifiedAt,
+            modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
+            createdAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
             size: file.size,
             isDirty: false,
           }))
@@ -68,17 +69,49 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
   const loadRecentFiles = useCallback(() => {
     const stored = getFromStorage<MarkdownFile[]>(STORAGE_KEYS.RECENT_FILES, []);
-    setRecentFiles(stored);
+    const normalized = (stored || []).map((file) => ({
+      ...file,
+      modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
+      createdAt: file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt || Date.now()),
+    }));
+    setRecentFiles(normalized);
   }, []);
 
   const saveToRecentFiles = useCallback((file: MarkdownFile) => {
-    const updated = [file, ...recentFiles.filter(f => f.id !== file.id)].slice(0, 10);
+    const safeFile = {
+      ...file,
+      modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
+      createdAt: file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt || Date.now()),
+    };
+    const updated = [safeFile, ...recentFiles.filter(f => f.id !== file.id)].slice(0, 15);
     setRecentFiles(updated);
     setToStorage(STORAGE_KEYS.RECENT_FILES, updated);
   }, [recentFiles]);
 
+  const createDraft = useCallback((name: string, content: string) => {
+    const safeName = ensureMarkdownFileName(name);
+    const draftFile: MarkdownFile = {
+      id: `draft_${Date.now()}`,
+      name: safeName,
+      content,
+      path: safeName,
+      provider: 'local',
+      modifiedAt: new Date(),
+      createdAt: new Date(),
+      size: content.length,
+      isDirty: false,
+    };
+    setCurrentFile(draftFile);
+    saveToRecentFiles(draftFile);
+  }, [saveToRecentFiles]);
+
   const openFile = useCallback(async (fileId: string) => {
     if (!storageProvider) {
+      const existingDraft = recentFiles.find((f) => f.id === fileId);
+      if (existingDraft) {
+        setCurrentFile(existingDraft);
+        return;
+      }
       setError('No storage provider selected');
       return;
     }
@@ -128,8 +161,16 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
   }, [storageProvider, recentFiles, saveToRecentFiles]);
 
   const saveFile = useCallback(async () => {
-    if (!currentFile || !storageProvider) {
+    if (!currentFile) {
       setError('No file to save');
+      return;
+    }
+
+    if (!storageProvider) {
+      exportToMarkdownFile(currentFile.content, currentFile.name);
+      const updated = { ...currentFile, isDirty: false, modifiedAt: new Date() };
+      setCurrentFile(updated);
+      saveToRecentFiles(updated);
       return;
     }
 
@@ -157,7 +198,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
   const createFile = useCallback(async (name: string, content: string) => {
     if (!storageProvider) {
-      setError('No storage provider selected');
+      createDraft(name, content);
       return;
     }
 
@@ -186,11 +227,14 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     } finally {
       setIsLoading(false);
     }
-  }, [storageProvider, saveToRecentFiles]);
+  }, [storageProvider, createDraft, saveToRecentFiles]);
 
   const deleteFile = useCallback(async (fileId: string) => {
     if (!storageProvider) {
-      setError('No storage provider selected');
+      if (currentFile?.id === fileId) {
+        setCurrentFile(null);
+      }
+      setRecentFiles(prev => prev.filter(f => f.id !== fileId));
       return;
     }
 
@@ -213,8 +257,6 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
   }, [storageProvider, currentFile]);
 
   const renameFile = useCallback(async (_fileId: string, _newName: string) => {
-    // This would need to be implemented per storage provider
-    // For now, we'll update the local state
     setError('Rename functionality not yet implemented');
   }, []);
 
@@ -247,6 +289,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     createFile,
     deleteFile,
     renameFile,
-    updateFileContent
+    updateFileContent,
+    createDraft
   };
 }

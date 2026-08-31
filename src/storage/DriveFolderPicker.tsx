@@ -67,72 +67,97 @@ export function DriveFolderPicker({
     breadcrumbs[breadcrumbs.length - 1]?.name || 'My Drive';
 
   return (
-    <Modal isOpen={isOpen} onClose={onCancel} title="Choose a Google Drive folder">
-      <div className="drive-folder-picker">
-        <p className="drive-folder-picker-hint">
-          Pick a folder to browse markdown files inside it (including subfolders),
-          or search your entire Drive.
+    <Modal isOpen={isOpen} onClose={onCancel} title="Choose Google Drive Folder">
+      <div className="drive-picker-container">
+        <p className="drive-picker-subtitle">
+          Select a folder to browse and edit your markdown notes, or search your entire Drive.
         </p>
 
         {error && <div className="error-message">{error}</div>}
 
+        {/* Option 1: Entire Drive */}
         <button
           type="button"
-          className="drive-folder-option"
+          className="drive-root-option"
           onClick={() => onSelect(null, 'All Google Drive')}
         >
-          <span className="drive-folder-option-icon">🌐</span>
-          <span>
+          <div className="drive-root-icon-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="20" height="20">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+            </svg>
+          </div>
+          <div className="drive-root-text">
             <strong>All Google Drive</strong>
-            <small>Search markdown files everywhere in your Drive</small>
-          </span>
+            <span>Search & browse markdown files across your entire Drive</span>
+          </div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16" style={{ color: 'var(--text-muted)' }}>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
         </button>
 
-        <div className="drive-folder-browser">
-          <div className="drive-breadcrumbs">
+        <div className="drive-browser-card">
+          {/* Breadcrumb Bar */}
+          <div className="drive-breadcrumb-bar">
             {breadcrumbs.map((crumb, index) => (
-              <span key={crumb.id}>
-                {index > 0 && <span className="drive-breadcrumb-sep">/</span>}
+              <span key={crumb.id} className="drive-crumb-item">
+                {index > 0 && <span className="drive-crumb-sep">/</span>}
                 <button
                   type="button"
-                  className="drive-breadcrumb"
+                  className={`drive-crumb-btn ${index === breadcrumbs.length - 1 ? 'active' : ''}`}
                   onClick={() => navigateTo(index)}
                 >
-                  {crumb.name}
+                  {index === 0 ? '📁 My Drive' : crumb.name}
                 </button>
               </span>
             ))}
           </div>
 
-          {isLoading ? (
-            <div className="drive-folder-loading">Loading folders...</div>
-          ) : folders.length === 0 ? (
-            <div className="drive-folder-empty">No subfolders here</div>
-          ) : (
-            <ul className="drive-folder-list">
-              {folders.map((folder) => (
-                <li key={folder.id}>
+          {/* Folder List */}
+          <div className="drive-list-wrapper">
+            {isLoading ? (
+              <div className="drive-loading-state">
+                <div className="loading-spinner" style={{ width: '24px', height: '24px' }}></div>
+                <span>Loading folders...</span>
+              </div>
+            ) : folders.length === 0 ? (
+              <div className="drive-empty-state">
+                <span>📂</span>
+                <p>No subfolders in this folder</p>
+              </div>
+            ) : (
+              <div className="drive-folders-grid">
+                {folders.map((folder) => (
                   <button
+                    key={folder.id}
                     type="button"
-                    className="drive-folder-item"
+                    className="drive-folder-pill"
                     onClick={() => openFolder(folder)}
                   >
-                    <span>📁</span>
-                    {folder.name}
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    <span className="drive-folder-name">{folder.name}</span>
+                    <svg className="drive-arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
 
-          <div className="drive-folder-actions">
+          {/* Footer Actions */}
+          <div className="drive-modal-footer">
+            <Button
+              variant="secondary"
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
             <Button
               onClick={() => onSelect(currentFolderId, currentFolderName)}
             >
-              Use &quot;{currentFolderName}&quot;
-            </Button>
-            <Button variant="secondary" onClick={onCancel}>
-              Cancel
+              Select &quot;{currentFolderName}&quot;
             </Button>
           </div>
         </div>
@@ -140,3 +165,4 @@ export function DriveFolderPicker({
     </Modal>
   );
 }
+

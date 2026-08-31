@@ -88,16 +88,16 @@ export function sanitizeLinks(html: string): string {
  * Validates if content contains potentially dangerous patterns
  */
 export function isContentSafe(content: string): boolean {
+  if (!content) return true;
   const dangerousPatterns = [
-    /<script/i,
-    /javascript:/i,
-    /on\w+\s*=/i,
-    /<iframe/i,
-    /<object/i,
-    /<embed/i,
+    /<script[\s\S]*?>/i,
+    /javascript:\s*/i,
+    /<iframe[\s\S]*?>/i,
+    /<object[\s\S]*?>/i,
+    /<embed[\s\S]*?>/i,
     /data:text\/html/i,
     /vbscript:/i,
-    /expression\(/i
+    /expression\s*\(/i
   ];
 
   return !dangerousPatterns.some(pattern => pattern.test(content));
@@ -110,16 +110,17 @@ export function isContentSafe(content: string): boolean {
 export function sanitizeFileContent(content: string): string {
   if (!content) return '';
 
-  const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(content);
-  if (looksLikeHtml) {
-    return sanitizeHTML(content);
-  }
-
-  // Markdown source is stored as-is; TipTap converts + sanitizes on display.
-  // Still strip null bytes and obvious script blocks from raw source.
-  return content
+  // Clean null bytes and dangerous executable script tags from raw source
+  let sanitized = content
     .replace(/\u0000/g, '')
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+
+  const looksLikeFullHtmlDoc = /^\s*<!DOCTYPE|^\s*<html\b/i.test(sanitized);
+  if (looksLikeFullHtmlDoc) {
+    sanitized = sanitizeHTML(sanitized);
+  }
+
+  return sanitized;
 }
 
 export function sanitizeUserInput(input: string): string {
