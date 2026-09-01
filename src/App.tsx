@@ -55,6 +55,9 @@ function App() {
   const [createNameError, setCreateNameError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isCreatingNote, setIsCreatingNote] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('webmd_theme') as 'light' | 'dark') || 'dark';
@@ -70,8 +73,10 @@ function App() {
     openFile,
     saveFile,
     createFile,
+    deleteFile,
     updateFileContent,
-    createDraft
+    createDraft,
+    closeFile
   } = useFileManagement(storageProvider);
 
   // Handle theme changes
@@ -83,6 +88,15 @@ function App() {
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => !prev);
+  }, []);
+
+  const handleGoHome = useCallback(() => {
+    closeFile();
+    setStorageProvider(null);
+  }, [closeFile]);
 
   const handleProviderSelected = useCallback((provider: StorageProvider | null) => {
     setStorageProvider(provider);
@@ -108,7 +122,7 @@ function App() {
   }, [pendingDriveProvider]);
 
   const handleCreateFile = useCallback(async () => {
-    if (!newFileName.trim()) return;
+    if (!newFileName.trim() || isCreatingNote) return;
 
     const validation = validateFileName(newFileName.trim());
     if (!validation.valid) {
@@ -127,10 +141,18 @@ function App() {
     const initialContent = selectedTmpl ? selectedTmpl.content : '';
 
     setCreateNameError(null);
-    await createFile(safeName, initialContent);
-    setShowCreateModal(false);
-    setNewFileName('');
-  }, [newFileName, selectedTemplateId, createFile]);
+    setIsCreatingNote(true);
+
+    try {
+      await createFile(safeName, initialContent);
+      setShowCreateModal(false);
+      setNewFileName('');
+    } catch (err) {
+      setCreateNameError(err instanceof Error ? err.message : 'Failed to create note');
+    } finally {
+      setIsCreatingNote(false);
+    }
+  }, [newFileName, selectedTemplateId, isCreatingNote, createFile]);
 
   const handleCreateFromTemplateDirect = useCallback((fileName: string, content: string) => {
     if (storageProvider) {
@@ -176,6 +198,9 @@ function App() {
       } else if (e.key === 'p') {
         e.preventDefault();
         setViewMode((prev) => (prev === 'edit' ? 'split' : prev === 'split' ? 'preview' : 'edit'));
+      } else if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault();
+        toggleSidebar();
       } else if (e.key === 'n' && !e.shiftKey) {
         e.preventDefault();
         if (storageProvider) {
@@ -183,7 +208,7 @@ function App() {
         }
       }
     }
-  }, [currentFile, storageProvider, handleSaveFile]);
+  }, [currentFile, storageProvider, handleSaveFile, toggleSidebar]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -203,14 +228,22 @@ function App() {
     <ErrorBoundary>
       <div className="app">
         <MainLayout
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
           header={
             <header className="app-header">
               <div className="header-left">
-                <div className="brand-badge" onClick={() => setStorageProvider(null)}>
+                <button
+                  type="button"
+                  className="brand-badge"
+                  onClick={handleGoHome}
+                  title="Go to Homepage"
+                  aria-label="MarkLoom Homepage"
+                >
                   <span className="brand-icon">✦</span>
-                  <span>Web MD</span>
+                  <span className="brand-text">MarkLoom</span>
                   <span className="brand-pill">v2.0</span>
-                </div>
+                </button>
 
                 {storageProvider && (
                   <ProviderSelector
@@ -336,11 +369,26 @@ function App() {
                 currentFile={currentFile}
                 onFileSelect={openFile}
                 onCreateFile={() => setShowCreateModal(true)}
+                onDeleteFile={(fileId, fileName) => setFileToDelete({ id: fileId, name: fileName })}
+                onToggleSidebar={toggleSidebar}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
               />
             ) : (
               <div className="empty-state">
+                <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="sidebar-toggle-btn"
+                    onClick={toggleSidebar}
+                    title="Collapse sidebar (⌘B)"
+                    aria-label="Collapse sidebar"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                    </svg>
+                  </button>
+                </div>
                 <div className="empty-state-icon">📂</div>
                 <p>Pick a storage source to browse notes</p>
               </div>
@@ -402,6 +450,17 @@ function App() {
               <div className="editor-container">
                 <div className="editor-topbar">
                   <div className="doc-title-group">
+                    <button
+                      type="button"
+                      className="icon-btn icon-btn-sm"
+                      onClick={closeFile}
+                      title="Close note (Go back)"
+                      aria-label="Close note"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="15" height="15">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
                     <svg className="doc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
@@ -409,6 +468,17 @@ function App() {
                     {currentFile.isDirty && (
                       <span className="doc-unsaved-badge">Unsaved</span>
                     )}
+                    <button
+                      type="button"
+                      className="icon-btn icon-btn-sm danger-hover"
+                      onClick={() => setFileToDelete({ id: currentFile.id, name: currentFile.name })}
+                      title={`Delete "${currentFile.name}"`}
+                      aria-label="Delete note"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
 
@@ -428,7 +498,12 @@ function App() {
         {/* Create Note Modal with Template Preview */}
         <Modal
           isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
+          onClose={() => {
+            if (!isCreatingNote) {
+              setShowCreateModal(false);
+              setCreateNameError(null);
+            }
+          }}
           title="Create New Note"
         >
           <div className="create-file-modal">
@@ -441,6 +516,7 @@ function App() {
                   <button
                     key={tmpl.id}
                     type="button"
+                    disabled={isCreatingNote}
                     className={`theme-option ${selectedTemplateId === tmpl.id ? 'active' : ''}`}
                     onClick={() => {
                       setSelectedTemplateId(tmpl.id);
@@ -461,6 +537,7 @@ function App() {
               </label>
               <input
                 type="text"
+                disabled={isCreatingNote}
                 className="file-name-input"
                 placeholder="e.g. project-roadmap.md"
                 value={newFileName}
@@ -478,19 +555,64 @@ function App() {
             <div className="modal-actions">
               <Button
                 variant="secondary"
+                disabled={isCreatingNote}
                 onClick={() => {
-                  setShowCreateModal(false);
-                  setCreateNameError(null);
+                  if (!isCreatingNote) {
+                    setShowCreateModal(false);
+                    setCreateNameError(null);
+                  }
                 }}
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleCreateFile}
-                disabled={!newFileName.trim()}
+                disabled={!newFileName.trim() || isCreatingNote}
               >
-                Create Note
+                {isCreatingNote ? (
+                  <span className="btn-loading-dots">
+                    Creating<span className="dot dot-1">.</span><span className="dot dot-2">.</span><span className="dot dot-3">.</span>
+                  </span>
+                ) : (
+                  'Create Note'
+                )}
               </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Delete Note Confirmation Modal */}
+        <Modal
+          isOpen={!!fileToDelete}
+          onClose={() => setFileToDelete(null)}
+          title="Delete Note"
+        >
+          <div className="delete-modal-content" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
+              Are you sure you want to permanently delete <strong style={{ color: 'var(--text-primary)' }}>&ldquo;{fileToDelete?.name}&rdquo;</strong>?
+            </p>
+            <p style={{ fontSize: '0.775rem', color: 'var(--text-muted)', margin: 0 }}>
+              This will remove the file from your workspace. This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <Button
+                variant="secondary"
+                onClick={() => setFileToDelete(null)}
+              >
+                Cancel
+              </Button>
+              <button
+                type="button"
+                className="btn-danger"
+                onClick={async () => {
+                  if (fileToDelete) {
+                    await deleteFile(fileToDelete.id);
+                    setFileToDelete(null);
+                  }
+                }}
+              >
+                Delete Note
+              </button>
             </div>
           </div>
         </Modal>

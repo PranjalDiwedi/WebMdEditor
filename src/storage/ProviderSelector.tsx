@@ -107,12 +107,12 @@ export function ProviderSelector({
   currentProvider,
   variant = 'full',
 }: ProviderSelectorProps) {
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const handleConnect = async (providerId: string) => {
-    setIsConnecting(true);
+    setConnectingProvider(providerId);
     setError(null);
 
     try {
@@ -147,7 +147,7 @@ export function ProviderSelector({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to connect to provider');
     } finally {
-      setIsConnecting(false);
+      setConnectingProvider(null);
     }
   };
 
@@ -166,7 +166,7 @@ export function ProviderSelector({
         <button
           className="storage-change-btn"
           onClick={handleDisconnect}
-          disabled={isConnecting}
+          disabled={connectingProvider !== null}
           title="Switch storage location"
           type="button"
         >
@@ -184,7 +184,7 @@ export function ProviderSelector({
     <div className="storage-picker-panel">
       <div className="landing-container">
         <div className="landing-badge">
-          <span>✦</span> Fast • Private • Local-First Markdown
+          <span>✦</span> MarkLoom • Fast, Private, Local-First Markdown
         </div>
 
         <h1 className="landing-headline">
@@ -202,7 +202,7 @@ export function ProviderSelector({
         <div className="landing-cards-grid">
           <div
             className="landing-provider-card"
-            onClick={() => !isConnecting && handleConnect('local')}
+            onClick={() => !connectingProvider && handleConnect('local')}
           >
             <div className="provider-card-icon-wrapper">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="24" height="24">
@@ -213,17 +213,17 @@ export function ProviderSelector({
               <h3>Local Storage</h3>
               <p>Open and edit markdown files directly on your computer with zero cloud lock-in.</p>
             </div>
-            <button type="button" className="provider-card-btn" disabled={isConnecting}>
+            <button type="button" className="provider-card-btn" disabled={connectingProvider !== null}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
               </svg>
-              {isConnecting ? 'Connecting...' : 'Open Local Folder'}
+              {connectingProvider === 'local' ? 'Connecting...' : 'Open Local Folder'}
             </button>
           </div>
 
           <div
             className="landing-provider-card"
-            onClick={() => !isConnecting && handleConnect('google-drive')}
+            onClick={() => !connectingProvider && handleConnect('google-drive')}
           >
             <div className="provider-card-icon-wrapper" style={{ background: 'rgba(52, 211, 153, 0.15)', color: 'var(--success)' }}>
               <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
@@ -234,11 +234,11 @@ export function ProviderSelector({
               <h3>Google Drive</h3>
               <p>Browse and sync your notes directly to Google Drive across all your devices.</p>
             </div>
-            <button type="button" className="provider-card-btn" disabled={isConnecting}>
+            <button type="button" className="provider-card-btn" disabled={connectingProvider !== null}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
-              {isConnecting ? 'Connecting...' : 'Connect Google Drive'}
+              {connectingProvider === 'google-drive' ? 'Connecting...' : 'Connect Google Drive'}
             </button>
           </div>
         </div>
@@ -301,9 +301,9 @@ export function ProviderSelector({
           <div className="feature-pill-item">
             <span>🔒</span> 100% Client-Side Privacy
           </div>
-          <div className="feature-pill-item">
+          {/* <div className="feature-pill-item">
             <span>💾</span> Multi-Cloud Sync
-          </div>
+          </div> */}
           <div className="feature-pill-item">
             <span>📄</span> GFM & Code Blocks
           </div>

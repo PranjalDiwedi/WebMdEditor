@@ -13,6 +13,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
   setSearchQuery: (query: string) => void;
   updateFileContent: (content: string) => void;
   createDraft: (name: string, content: string) => void;
+  closeFile: () => void;
 } {
   const [currentFile, setCurrentFile] = useState<MarkdownFile | null>(null);
   const [recentFiles, setRecentFiles] = useState<MarkdownFile[]>([]);
@@ -230,25 +231,23 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
   }, [storageProvider, createDraft, saveToRecentFiles]);
 
   const deleteFile = useCallback(async (fileId: string) => {
-    if (!storageProvider) {
-      if (currentFile?.id === fileId) {
-        setCurrentFile(null);
-      }
-      setRecentFiles(prev => prev.filter(f => f.id !== fileId));
-      return;
-    }
-
     setIsLoading(true);
     setError(null);
 
     try {
-      await storageProvider.deleteFile(fileId);
+      if (storageProvider) {
+        await storageProvider.deleteFile(fileId);
+      }
       
       if (currentFile?.id === fileId) {
         setCurrentFile(null);
       }
 
-      setRecentFiles(prev => prev.filter(f => f.id !== fileId));
+      setRecentFiles((prev) => {
+        const updated = prev.filter((f) => f.id !== fileId);
+        setToStorage(STORAGE_KEYS.RECENT_FILES, updated);
+        return updated;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete file');
     } finally {
@@ -258,6 +257,10 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
   const renameFile = useCallback(async (_fileId: string, _newName: string) => {
     setError('Rename functionality not yet implemented');
+  }, []);
+
+  const closeFile = useCallback(() => {
+    setCurrentFile(null);
   }, []);
 
   const updateFileContent = useCallback((content: string) => {
@@ -290,6 +293,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     deleteFile,
     renameFile,
     updateFileContent,
-    createDraft
+    createDraft,
+    closeFile
   };
 }

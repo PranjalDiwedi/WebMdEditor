@@ -9,20 +9,25 @@ interface MainLayoutProps {
   onToggleSidebar?: () => void;
 }
 
-export function MainLayout({ children, sidebar, header }: MainLayoutProps) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+export function MainLayout({
+  children,
+  sidebar,
+  header,
+  sidebarCollapsed: propCollapsed,
+  onToggleSidebar: propToggleSidebar,
+}: MainLayoutProps) {
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const isCollapsed = propCollapsed !== undefined ? propCollapsed : internalCollapsed;
 
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth <= 768;
       setIsMobile(mobile);
       if (mobile) {
-        setSidebarCollapsed(true);
         setMobileMenuOpen(false);
-      } else {
-        setSidebarCollapsed(false);
       }
     };
 
@@ -34,8 +39,10 @@ export function MainLayout({ children, sidebar, header }: MainLayoutProps) {
   const toggleSidebar = () => {
     if (isMobile) {
       setMobileMenuOpen(!mobileMenuOpen);
+    } else if (propToggleSidebar) {
+      propToggleSidebar();
     } else {
-      setSidebarCollapsed(!sidebarCollapsed);
+      setInternalCollapsed(!internalCollapsed);
     }
   };
 
@@ -43,7 +50,7 @@ export function MainLayout({ children, sidebar, header }: MainLayoutProps) {
     <div className="main-layout">
       {header}
       
-      <div className={`layout-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${isMobile ? 'mobile-view' : ''} ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}>
+      <div className={`layout-content ${isCollapsed ? 'sidebar-collapsed' : ''} ${isMobile ? 'mobile-view' : ''} ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}>
         {isMobile && mobileMenuOpen && (
           <div 
             className="mobile-sidebar-overlay"
@@ -52,14 +59,16 @@ export function MainLayout({ children, sidebar, header }: MainLayoutProps) {
         )}
         
         <aside className={`sidebar ${isMobile ? 'mobile-sidebar' : ''}`}>
-          {(!sidebarCollapsed || isMobile) ? (
+          {(!isCollapsed || isMobile) ? (
             sidebar
           ) : (
             <div className="sidebar-rail">
               <button
+                type="button"
                 className="sidebar-rail-btn"
                 onClick={toggleSidebar}
                 title="Expand sidebar (⌘B)"
+                aria-label="Expand sidebar"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />

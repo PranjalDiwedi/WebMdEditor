@@ -1,4 +1,4 @@
-export const APP_NAME = 'Web MD Editor';
+export const APP_NAME = 'MarkLoom';
 
 export const SUPPORTED_FILE_EXTENSIONS = ['.md', '.markdown', '.mdown', '.mkd'];
 

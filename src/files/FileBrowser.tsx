@@ -7,6 +7,8 @@ interface FileBrowserProps {
   currentFile: MarkdownFile | null;
   onFileSelect: (fileId: string) => void;
   onCreateFile: () => void;
+  onDeleteFile?: (fileId: string, fileName: string, e: React.MouseEvent) => void;
+  onToggleSidebar?: () => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
 }
@@ -31,11 +33,13 @@ function formatRelativeTime(dateInput: Date | string | number | undefined | null
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-export function FileBrowser({ 
-  files, 
-  currentFile, 
-  onFileSelect, 
+export function FileBrowser({
+  files,
+  currentFile,
+  onFileSelect,
   onCreateFile,
+  onDeleteFile,
+  onToggleSidebar,
   searchQuery,
   onSearchChange
 }: FileBrowserProps) {
@@ -46,17 +50,32 @@ export function FileBrowser({
           <span>Notes</span>
           <span className="sidebar-count-badge">{files.length}</span>
         </div>
-        <button 
-          className="btn-new-file"
-          onClick={onCreateFile}
-          title="Create new note (⌘N)"
-          aria-label="Create new note"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-          </svg>
-          <span>New Note</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          <button
+            className="btn-new-file"
+            onClick={onCreateFile}
+            title="Create new note (⌘N)"
+            aria-label="Create new note"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+            </svg>
+            <span>New</span>
+          </button>
+          {onToggleSidebar && (
+            <button
+              type="button"
+              className="sidebar-toggle-btn"
+              onClick={onToggleSidebar}
+              title="Collapse sidebar (⌘B)"
+              aria-label="Collapse sidebar"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="search-container">
@@ -72,8 +91,8 @@ export function FileBrowser({
             onChange={(e) => onSearchChange(e.target.value)}
           />
           {searchQuery ? (
-            <button 
-              className="search-clear-btn" 
+            <button
+              className="search-clear-btn"
               onClick={() => onSearchChange('')}
               title="Clear search"
             >
@@ -113,9 +132,27 @@ export function FileBrowser({
                 <div className="file-card-preview">{previewText}</div>
                 <div className="file-card-footer">
                   <span className="file-card-size">{formatFileSize(file.size)}</span>
-                  {file.isDirty && (
-                    <span className="unsaved-dot" title="Unsaved changes" />
-                  )}
+                  <div className="file-card-footer-right">
+                    {file.isDirty && (
+                      <span className="unsaved-dot" title="Unsaved changes" />
+                    )}
+                    {onDeleteFile && (
+                      <button
+                        type="button"
+                        className="file-card-delete-btn"
+                        title={`Delete "${file.name}"`}
+                        aria-label={`Delete ${file.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteFile(file.id, file.name, e);
+                        }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );

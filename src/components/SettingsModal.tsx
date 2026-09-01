@@ -74,7 +74,7 @@ export function SettingsModal({ isOpen, onClose, theme, onThemeChange }: Setting
         </div>
 
         <div className="setting-section" style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
-          <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>Web MD Editor v2.0.0</p>
+          <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>MarkLoom v2.0.0</p>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
             Fast, private, local-first markdown editor with native file system access and Google Drive cloud sync.
           </p>

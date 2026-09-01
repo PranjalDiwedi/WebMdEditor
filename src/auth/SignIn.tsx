@@ -8,8 +8,8 @@ export function SignIn({ onSignIn, isLoading, error }: SignInProps) {
   return (
     <div className="sign-in-container">
       <div className="sign-in-card">
-        <h1>Welcome to Web MD Editor</h1>
-        <p className="subtitle">A Mac Notes-inspired markdown editor</p>
+        <h1>Welcome to MarkLoom</h1>
+        <p className="subtitle">Fast, private, local-first markdown workspace</p>
         
         {error && (
           <div className="error-message">
