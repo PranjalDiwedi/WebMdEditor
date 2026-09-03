@@ -8,6 +8,8 @@ export interface MarkdownFile {
   createdAt: Date;
   size: number;
   isDirty: boolean;
+  isPinned?: boolean;
+  isMoving?: boolean;
 }
 
 export interface FileState {

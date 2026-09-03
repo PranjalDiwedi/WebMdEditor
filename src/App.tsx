@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import type { MarkdownFile } from './types/file';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SignOut } from './auth/SignOut';
 import { useAuth } from './auth/useAuth';
@@ -14,6 +15,7 @@ import { MainLayout } from './layout/MainLayout';
 import { Modal } from './components/Modal';
 import { Button } from './components/Button';
 import { SettingsModal } from './components/SettingsModal';
+import { ToastContainer } from './components/Toast';
 import { MandrakLogo } from './components/MandrakLogo';
 import { preloadGoogleScripts } from './utils/googleScripts';
 import { OAUTH_CONFIGS } from './config/constants';
@@ -67,9 +69,18 @@ function App() {
     return (localStorage.getItem('webmd_theme') as 'light' | 'dark') || 'dark';
   });
 
+  const [createFolderPath, setCreateFolderPath] = useState<string | undefined>(undefined);
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [parentFolderPath, setParentFolderPath] = useState<string | undefined>(undefined);
+  const [createFolderError, setCreateFolderError] = useState<string | null>(null);
+
   const {
     currentFile,
     recentFiles,
+    customFolders,
+    toasts,
+    dismissToast,
     isLoading: fileLoading,
     error: fileError,
     searchQuery,
@@ -77,11 +88,49 @@ function App() {
     openFile,
     saveFile,
     createFile,
+    createFolder,
+    duplicateFile,
+    togglePinFile,
+    moveFile,
+    moveFolder,
     deleteFile,
     updateFileContent,
     createDraft,
     closeFile
   } = useFileManagement(storageProvider);
+
+  const [fileToMove, setFileToMove] = useState<MarkdownFile | null>(null);
+
+  const availableFolders = useMemo(() => {
+    const folders = new Set<string>();
+    for (const folder of customFolders) {
+      const clean = folder.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      if (clean) folders.add(clean);
+    }
+    for (const file of recentFiles) {
+      const rawPath = file.path && file.path !== '/' && file.path !== '.' ? file.path : '';
+      const cleanPath = rawPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      const parts = cleanPath ? cleanPath.split('/') : [];
+      const folderParts = parts.length > 0 && parts[parts.length - 1].toLowerCase() === file.name.toLowerCase()
+        ? parts.slice(0, -1)
+        : parts;
+      if (folderParts.length > 0) {
+        folders.add(folderParts.join('/'));
+      }
+    }
+    return Array.from(folders).sort();
+  }, [customFolders, recentFiles]);
+
+  const currentFileFolder = useMemo(() => {
+    if (!fileToMove) return '';
+    const rawPath = fileToMove.path && fileToMove.path !== '/' && fileToMove.path !== '.' ? fileToMove.path : '';
+    const cleanPath = rawPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    const parts = cleanPath ? cleanPath.split('/') : [];
+    const folderParts = parts.length > 0 && parts[parts.length - 1].toLowerCase() === fileToMove.name.toLowerCase()
+      ? parts.slice(0, -1)
+      : parts;
+    return folderParts.join('/');
+  }, [fileToMove]);
 
   // Preload Google Identity Services and Google Drive API for smooth popups across Firefox & Chrome
   useEffect(() => {
@@ -146,6 +195,15 @@ function App() {
     setPendingDriveProvider(null);
   }, [pendingDriveProvider]);
 
+  const handleOpenCreateModal = useCallback((folderPath?: string) => {
+    setCreateFolderPath(folderPath);
+    setNewFileName('');
+    setCreateNameError(null);
+    setSelectedTemplateId('blank');
+    setShowCreateModal(true);
+    setMobileMenuOpen(false);
+  }, []);
+
   const handleCreateFile = useCallback(async () => {
     if (!newFileName.trim() || isCreatingNote) return;
 
@@ -169,15 +227,43 @@ function App() {
     setIsCreatingNote(true);
 
     try {
-      await createFile(safeName, initialContent);
+      await createFile(safeName, initialContent, createFolderPath);
       setShowCreateModal(false);
       setNewFileName('');
+      setCreateFolderPath(undefined);
     } catch (err) {
       setCreateNameError(err instanceof Error ? err.message : 'Failed to create note');
     } finally {
       setIsCreatingNote(false);
     }
-  }, [newFileName, selectedTemplateId, isCreatingNote, createFile]);
+  }, [newFileName, selectedTemplateId, isCreatingNote, createFile, createFolderPath]);
+
+  const handleOpenCreateFolderModal = useCallback((parentPath?: string) => {
+    setParentFolderPath(parentPath);
+    setNewFolderName('');
+    setCreateFolderError(null);
+    setShowCreateFolderModal(true);
+    setMobileMenuOpen(false);
+  }, []);
+
+  const handleCreateFolderSubmit = useCallback((e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = newFolderName.trim().replace(/^[\\/]+|[\\/]+$/g, '');
+    if (!trimmed) {
+      setCreateFolderError('Please enter a folder name');
+      return;
+    }
+    if (/[<>:"|?*]/.test(trimmed)) {
+      setCreateFolderError('Folder name cannot contain invalid characters (<>:"|?*)');
+      return;
+    }
+    const fullPath = parentFolderPath ? `${parentFolderPath}/${trimmed}` : trimmed;
+    createFolder(fullPath);
+    setShowCreateFolderModal(false);
+    setNewFolderName('');
+    setParentFolderPath(undefined);
+    setCreateFolderError(null);
+  }, [newFolderName, parentFolderPath, createFolder]);
 
   const handleCreateFromTemplateDirect = useCallback((fileName: string, content: string) => {
     if (storageProvider) {
@@ -414,14 +500,20 @@ function App() {
                 files={recentFiles}
                 currentFile={currentFile}
                 onFileSelect={handleOpenFile}
-                onCreateFile={() => {
-                  setShowCreateModal(true);
-                  setMobileMenuOpen(false);
-                }}
+                onCreateFile={handleOpenCreateModal}
+                onCreateFolder={handleOpenCreateFolderModal}
+                onDuplicateFile={duplicateFile}
+                onTogglePin={togglePinFile}
+                onMoveFile={moveFile}
+                onMoveFolder={moveFolder}
+                onOpenMoveModal={setFileToMove}
                 onDeleteFile={(fileId, fileName) => setFileToDelete({ id: fileId, name: fileName })}
                 onToggleSidebar={toggleSidebar}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
+                storageName={storageProvider ? storageProvider.name : recentFiles.length > 0 ? 'Local Vault' : 'Notes'}
+                customFolders={customFolders}
+                isLoading={fileLoading}
               />
             ) : (
               <div className="empty-state">
@@ -577,11 +669,18 @@ function App() {
             if (!isCreatingNote) {
               setShowCreateModal(false);
               setCreateNameError(null);
+              setCreateFolderPath(undefined);
             }
           }}
-          title="Create New Note"
+          title={createFolderPath ? `Create Note in "${createFolderPath}"` : "Create New Note"}
         >
           <div className="create-file-modal">
+            {createFolderPath && (
+              <div style={{ padding: '0.4rem 0.65rem', background: 'var(--bg-app)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>📁</span>
+                <span>Destination folder: <strong>{createFolderPath}</strong></span>
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                 Template
@@ -701,12 +800,143 @@ function App() {
           />
         )}
 
+        {/* Create Folder Modal */}
+        <Modal
+          isOpen={showCreateFolderModal}
+          onClose={() => {
+            setShowCreateFolderModal(false);
+            setCreateFolderError(null);
+            setParentFolderPath(undefined);
+          }}
+          title={parentFolderPath ? `Create Subfolder in "${parentFolderPath}"` : "Create New Folder in Root"}
+        >
+          <form onSubmit={handleCreateFolderSubmit} className="create-file-modal">
+            {parentFolderPath && (
+              <div style={{ padding: '0.4rem 0.65rem', background: 'var(--bg-app)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>📁</span>
+                <span>Parent folder: <strong>{parentFolderPath}</strong></span>
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Folder Name
+              </label>
+              <input
+                type="text"
+                className="file-name-input"
+                placeholder="e.g. Projects, Journal, Work"
+                value={newFolderName}
+                onChange={(e) => {
+                  setNewFolderName(e.target.value);
+                  setCreateFolderError(null);
+                }}
+                autoFocus
+              />
+              {createFolderError && (
+                <div className="error-message">{createFolderError}</div>
+              )}
+            </div>
+
+            <div className="modal-actions" style={{ marginTop: '0.5rem' }}>
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => {
+                  setShowCreateFolderModal(false);
+                  setCreateFolderError(null);
+                  setParentFolderPath(undefined);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={!newFolderName.trim()}
+              >
+                Create Folder
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* Move Note to Folder Modal */}
+        <Modal
+          isOpen={!!fileToMove}
+          onClose={() => setFileToMove(null)}
+          title="Move Note to Folder"
+        >
+          {fileToMove && (
+            <div className="move-modal-content">
+              <div className="move-modal-note-info">
+                <span className="move-note-icon">📄</span>
+                <span className="move-note-name">{fileToMove.name}</span>
+              </div>
+              <div className="move-modal-current-path">
+                <span>Current Location: </span>
+                <strong>{currentFileFolder ? `📁 ${currentFileFolder}` : '📁 Root Vault (/)'}</strong>
+              </div>
+
+              <div className="move-modal-section-title">Select Destination:</div>
+              <div className="move-modal-folder-list">
+                {/* Option 1: Root Vault */}
+                <button
+                  type="button"
+                  className={`move-folder-option ${currentFileFolder === '' ? 'disabled current' : ''}`}
+                  disabled={currentFileFolder === ''}
+                  onClick={() => {
+                    moveFile(fileToMove.id, '');
+                    setFileToMove(null);
+                  }}
+                >
+                  <div className="move-folder-option-left">
+                    <span className="move-folder-icon">📁</span>
+                    <span className="move-folder-label">{storageProvider ? storageProvider.name : 'Root Vault'} (/)</span>
+                  </div>
+                  {currentFileFolder === '' && <span className="move-current-badge">Current</span>}
+                </button>
+
+                {/* Option 2: Custom / Subfolders */}
+                {availableFolders.map((folder: string) => {
+                  const isCurrent = currentFileFolder === folder;
+                  return (
+                    <button
+                      key={folder}
+                      type="button"
+                      className={`move-folder-option ${isCurrent ? 'disabled current' : ''}`}
+                      disabled={isCurrent}
+                      onClick={() => {
+                        moveFile(fileToMove.id, folder);
+                        setFileToMove(null);
+                      }}
+                    >
+                      <div className="move-folder-option-left">
+                        <span className="move-folder-icon">📂</span>
+                        <span className="move-folder-label">{folder}</span>
+                      </div>
+                      {isCurrent && <span className="move-current-badge">Current</span>}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="modal-actions" style={{ marginTop: '1.25rem' }}>
+                <Button variant="ghost" onClick={() => setFileToMove(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
         <SettingsModal
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
           theme={theme}
           onThemeChange={setTheme}
         />
+
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </div>
     </ErrorBoundary>
   );

@@ -11,6 +11,7 @@ export abstract class StorageProvider implements IStorageProvider {
   abstract writeFile(fileId: string, content: string): Promise<void>;
   abstract createFile(name: string, content: string, path?: string): Promise<StorageFile>;
   abstract deleteFile(fileId: string): Promise<void>;
+  moveFile?(fileId: string, newPath: string, parentFolderId?: string): Promise<void>;
   abstract disconnect(): Promise<void>;
 
   protected convertToStorageFile(

@@ -190,9 +190,41 @@ export class GoogleDriveProvider extends StorageProvider {
     }
   }
 
+  private sanitizeDrivePath(rawPath: string, fileName: string): string {
+    if (!rawPath) return fileName;
+    const clean = rawPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    const segments = clean.split('/');
+    const sanitized = segments.filter((seg) => !/^[a-zA-Z0-9_-]{20,}$/.test(seg));
+    if (sanitized.length === 0) return fileName;
+    if (sanitized[sanitized.length - 1].toLowerCase() === fileName.toLowerCase()) {
+      return sanitized.join('/');
+    }
+    return `${sanitized.join('/')}/${fileName}`;
+  }
+
   private async listAllMarkdownFiles(): Promise<StorageFile[]> {
     const files: StorageFile[] = [];
     let pageToken: string | undefined;
+
+    // Fetch all folders with full pagination to map parent IDs to human-readable names
+    const folderMap = new Map<string, string>();
+    try {
+      let folderPageToken: string | undefined;
+      do {
+        const foldersResponse = await this.rateLimiter.schedule(async () =>
+          window.gapi.client.drive.files.list({
+            q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
+            fields: 'nextPageToken, files(id, name)',
+            pageSize: 100,
+            pageToken: folderPageToken,
+          })
+        );
+        for (const f of foldersResponse.result.files || []) {
+          folderMap.set(f.id, f.name);
+        }
+        folderPageToken = foldersResponse.result.nextPageToken;
+      } while (folderPageToken);
+    } catch {}
 
     const query =
       "trashed=false and (" +
@@ -218,12 +250,15 @@ export class GoogleDriveProvider extends StorageProvider {
 
       for (const file of response.result.files || []) {
         if (this.isMarkdownDriveFile(file)) {
+          const parentId = file.parents?.[0];
+          const parentName = parentId && folderMap.has(parentId) ? folderMap.get(parentId)! : '';
+          const fullPath = this.sanitizeDrivePath(parentName ? `${parentName}/${file.name}` : file.name, file.name);
           files.push(
             this.convertToStorageFile(
               file.id,
               file.name,
               '',
-              file.parents?.[0] || '/',
+              fullPath,
               new Date(file.modifiedTime),
               parseInt(file.size || '0', 10) || 0
             )
@@ -236,12 +271,16 @@ export class GoogleDriveProvider extends StorageProvider {
     return files;
   }
 
-  private async listFilesInFolderRecursive(folderId: string): Promise<StorageFile[]> {
+  private async listFilesInFolderRecursive(rootFolderId: string): Promise<StorageFile[]> {
     const files: StorageFile[] = [];
-    const folderQueue = [folderId];
+    const folderPathMap = new Map<string, string>();
+    folderPathMap.set(rootFolderId, '');
+
+    const folderQueue = [rootFolderId];
 
     while (folderQueue.length > 0) {
       const currentFolderId = folderQueue.shift()!;
+      const currentFolderPath = folderPathMap.get(currentFolderId) || '';
       let pageToken: string | undefined;
 
       do {
@@ -255,18 +294,21 @@ export class GoogleDriveProvider extends StorageProvider {
           })
         );
 
-        for (const file of response.result.files || []) {
-          if (file.mimeType === 'application/vnd.google-apps.folder') {
-            folderQueue.push(file.id);
-          } else if (this.isMarkdownDriveFile(file)) {
+        for (const item of response.result.files || []) {
+          if (item.mimeType === 'application/vnd.google-apps.folder') {
+            const subfolderPath = currentFolderPath ? `${currentFolderPath}/${item.name}` : item.name;
+            folderPathMap.set(item.id, subfolderPath);
+            folderQueue.push(item.id);
+          } else if (this.isMarkdownDriveFile(item)) {
+            const fileFullPath = currentFolderPath ? `${currentFolderPath}/${item.name}` : item.name;
             files.push(
               this.convertToStorageFile(
-                file.id,
-                file.name,
+                item.id,
+                item.name,
                 '',
-                file.parents?.[0] || currentFolderId,
-                new Date(file.modifiedTime),
-                parseInt(file.size || '0', 10) || 0
+                fileFullPath,
+                new Date(item.modifiedTime),
+                parseInt(item.size || '0', 10) || 0
               )
             );
           }
@@ -343,13 +385,23 @@ export class GoogleDriveProvider extends StorageProvider {
 
     try {
       return await this.rateLimiter.schedule(async () => {
+        let parentFolderId: string | null = this.folderId;
+
+        // If path is specified (e.g. "Projects" or "Work/Q3"), resolve or create subfolders
+        if (path) {
+          const cleanPath = path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+          const folderParts = cleanPath.split('/').filter((p) => p.toLowerCase() !== fileName.toLowerCase());
+          if (folderParts.length > 0) {
+            parentFolderId = await this.resolveOrCreateFolderPath(folderParts, this.folderId || 'root');
+          }
+        }
+
         const metadata: { name: string; mimeType: string; parents?: string[] } = {
           name: fileName,
           mimeType: 'text/markdown',
         };
-        const parentId = path || this.folderId;
-        if (parentId) {
-          metadata.parents = [parentId];
+        if (parentFolderId && parentFolderId !== 'root') {
+          metadata.parents = [parentFolderId];
         }
 
         const boundary = '-------md_editor_boundary';
@@ -379,11 +431,12 @@ export class GoogleDriveProvider extends StorageProvider {
         }
 
         const result = await response.json();
+        const fullRelPath = path ? `${path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')}/${fileName}` : fileName;
         return this.convertToStorageFile(
           result.id,
           result.name || fileName,
           content,
-          path || this.folderId || '/',
+          fullRelPath,
           result.modifiedTime ? new Date(result.modifiedTime) : new Date(),
           Number(result.size) || content.length
         );
@@ -391,6 +444,69 @@ export class GoogleDriveProvider extends StorageProvider {
     } catch (error) {
       logSecurityEvent('drive.createFile', error);
       throw new Error(toUserError(error, 'Failed to create Google Drive file'));
+    }
+  }
+
+  private async resolveOrCreateFolderPath(folderParts: string[], rootParentId: string): Promise<string> {
+    let currentParentId = rootParentId;
+
+    for (const folderName of folderParts) {
+      const escapedName = folderName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const query = `'${currentParentId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and trashed=false`;
+      const response = await window.gapi.client.drive.files.list({
+        q: query,
+        fields: 'files(id, name)',
+        pageSize: 1,
+      });
+
+      if (response.result.files && response.result.files.length > 0) {
+        currentParentId = response.result.files[0].id;
+      } else {
+        const createRes = await window.gapi.client.drive.files.create({
+          resource: {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: currentParentId !== 'root' ? [currentParentId] : undefined,
+          },
+          fields: 'id',
+        });
+        currentParentId = createRes.result.id;
+      }
+    }
+
+    return currentParentId;
+  }
+
+  async moveFile(fileId: string, destinationFolderPath: string): Promise<void> {
+    await this.ensureReadyAsync();
+
+    try {
+      await this.rateLimiter.schedule(async () => {
+        const fileRes = await window.gapi.client.drive.files.get({
+          fileId,
+          fields: 'parents',
+        });
+        const currentParents = (fileRes.result.parents || []).join(',');
+
+        let targetParentId = this.folderId || 'root';
+        if (destinationFolderPath) {
+          const cleanPath = destinationFolderPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+          const folderParts = cleanPath.split('/');
+          if (folderParts.length > 0) {
+            targetParentId = await this.resolveOrCreateFolderPath(folderParts, this.folderId || 'root');
+          }
+        }
+
+        await window.gapi.client.drive.files.update({
+          fileId,
+          addParents: targetParentId,
+          removeParents: currentParents,
+          fields: 'id, parents',
+        });
+      });
+    } catch (error) {
+      logSecurityEvent('drive.moveFile', error);
+      throw new Error(toUserError(error, 'Failed to move Google Drive file'));
     }
   }
 

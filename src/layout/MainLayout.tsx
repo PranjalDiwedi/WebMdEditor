@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 
 interface MainLayoutProps {
@@ -12,6 +12,10 @@ interface MainLayoutProps {
   onCloseMobileMenu?: () => void;
 }
 
+const MIN_SIDEBAR_WIDTH = 230;
+const MAX_SIDEBAR_WIDTH = 480;
+const DEFAULT_SIDEBAR_WIDTH = 280;
+
 export function MainLayout({
   children,
   sidebar,
@@ -22,8 +26,18 @@ export function MainLayout({
   onMobileMenuToggle,
   onCloseMobileMenu,
 }: MainLayoutProps) {
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('mandrak_sidebar_width');
+      return stored ? Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, Number(stored))) : DEFAULT_SIDEBAR_WIDTH;
+    } catch {
+      return DEFAULT_SIDEBAR_WIDTH;
+    }
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const isResizingRef = useRef(false);
 
   const mobileOpen = propMobileMenuOpen !== undefined ? propMobileMenuOpen : internalMobileMenuOpen;
 
@@ -45,6 +59,43 @@ export function MainLayout({
     return () => window.removeEventListener('resize', checkMobile);
   }, [mobileOpen, onCloseMobileMenu]);
 
+  // Handle sidebar resizing on desktop
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isMobile || sidebarCollapsed) return;
+    e.preventDefault();
+    setIsResizing(true);
+    isResizingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, moveEvent.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      isResizingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [isMobile, sidebarCollapsed]);
+
+  // Save width to localStorage when resizing finishes
+  useEffect(() => {
+    if (!isResizing && !isMobile) {
+      try {
+        localStorage.setItem('mandrak_sidebar_width', String(sidebarWidth));
+      } catch {}
+    }
+  }, [isResizing, sidebarWidth, isMobile]);
+
   const handleCloseMobile = () => {
     if (onCloseMobileMenu) {
       onCloseMobileMenu();
@@ -65,11 +116,15 @@ export function MainLayout({
     }
   };
 
+  const sidebarInlineStyle = !isMobile && !sidebarCollapsed
+    ? { width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px` }
+    : undefined;
+
   return (
-    <div className="main-layout">
+    <div className={`main-layout ${isResizing ? 'is-resizing-sidebar' : ''}`}>
       {header}
       
-      <div className={`layout-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${isMobile ? 'mobile-view' : ''} ${mobileOpen ? 'mobile-menu-open' : ''}`}>
+      <div className={`layout-content ${sidebarCollapsed && !isMobile ? 'sidebar-collapsed' : ''} ${isMobile ? 'mobile-view' : ''} ${mobileOpen ? 'mobile-menu-open' : ''}`}>
         {isMobile && mobileOpen && (
           <div 
             className="mobile-sidebar-overlay"
@@ -78,9 +133,21 @@ export function MainLayout({
           />
         )}
         
-        <aside className={`sidebar ${isMobile ? 'mobile-sidebar' : ''}`}>
+        <aside
+          className={`sidebar ${isMobile ? 'mobile-sidebar' : ''}`}
+          style={sidebarInlineStyle}
+        >
           {(!sidebarCollapsed || isMobile) ? (
-            sidebar
+            <>
+              {sidebar}
+              {!isMobile && !sidebarCollapsed && (
+                <div
+                  className={`sidebar-resizer ${isResizing ? 'active' : ''}`}
+                  onMouseDown={handleMouseDown}
+                  title="Drag to resize sidebar"
+                />
+              )}
+            </>
           ) : (
             <div className="sidebar-rail">
               <button
