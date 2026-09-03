@@ -91,7 +91,14 @@ export class GoogleOAuth {
           }
         },
         error_callback: (error: { type?: string; message?: string }) => {
-          reject(new Error(error.message || error.type || 'Google OAuth error'));
+          const isBlocked = error.type === 'popup_blocked_by_browser' || error.message?.includes('popup');
+          reject(
+            new Error(
+              isBlocked
+                ? 'Google Sign-in popup was blocked by Firefox/browser. Please enable popups for this site and try again.'
+                : error.message || error.type || 'Google OAuth error'
+            )
+          );
         },
       });
 

@@ -92,3 +92,9 @@ export function initDriveClient(apiKey?: string): Promise<void> {
 
   return driveClientReady;
 }
+
+export function preloadGoogleScripts(apiKey?: string): void {
+  // Fire-and-forget eager initialization so user click gestures remain synchronous
+  loadGisClient().catch(() => {});
+  initDriveClient(apiKey).catch(() => {});
+}

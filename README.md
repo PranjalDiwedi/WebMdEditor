@@ -1,6 +1,6 @@
-# Web MD Editor
+# Mandrak 🏔️
 
-A Mac Notes-inspired markdown editor with support for multiple cloud storage providers.
+**Mandrak** (*Mountain of Knowledge*) is a fast, distraction-free, local-first Markdown editor with native file system access and seamless cloud sync (Google Drive, Dropbox, OneDrive). 100% private, client-side, and designed for focused writing.
 
 ## Features
 

@@ -7,42 +7,61 @@ interface MainLayoutProps {
   header?: ReactNode;
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  mobileMenuOpen?: boolean;
+  onMobileMenuToggle?: () => void;
+  onCloseMobileMenu?: () => void;
 }
 
 export function MainLayout({
   children,
   sidebar,
   header,
-  sidebarCollapsed: propCollapsed,
-  onToggleSidebar: propToggleSidebar,
+  sidebarCollapsed = false,
+  onToggleSidebar,
+  mobileMenuOpen: propMobileMenuOpen,
+  onMobileMenuToggle,
+  onCloseMobileMenu,
 }: MainLayoutProps) {
-  const [internalCollapsed, setInternalCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(false);
 
-  const isCollapsed = propCollapsed !== undefined ? propCollapsed : internalCollapsed;
+  const mobileOpen = propMobileMenuOpen !== undefined ? propMobileMenuOpen : internalMobileMenuOpen;
 
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth <= 768;
       setIsMobile(mobile);
-      if (mobile) {
-        setMobileMenuOpen(false);
+      if (!mobile && mobileOpen) {
+        if (onCloseMobileMenu) {
+          onCloseMobileMenu();
+        } else {
+          setInternalMobileMenuOpen(false);
+        }
       }
     };
 
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  }, [mobileOpen, onCloseMobileMenu]);
 
-  const toggleSidebar = () => {
-    if (isMobile) {
-      setMobileMenuOpen(!mobileMenuOpen);
-    } else if (propToggleSidebar) {
-      propToggleSidebar();
+  const handleCloseMobile = () => {
+    if (onCloseMobileMenu) {
+      onCloseMobileMenu();
     } else {
-      setInternalCollapsed(!internalCollapsed);
+      setInternalMobileMenuOpen(false);
+    }
+  };
+
+  const handleToggle = () => {
+    if (isMobile) {
+      if (onMobileMenuToggle) {
+        onMobileMenuToggle();
+      } else {
+        setInternalMobileMenuOpen(!internalMobileMenuOpen);
+      }
+    } else if (onToggleSidebar) {
+      onToggleSidebar();
     }
   };
 
@@ -50,23 +69,24 @@ export function MainLayout({
     <div className="main-layout">
       {header}
       
-      <div className={`layout-content ${isCollapsed ? 'sidebar-collapsed' : ''} ${isMobile ? 'mobile-view' : ''} ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}>
-        {isMobile && mobileMenuOpen && (
+      <div className={`layout-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${isMobile ? 'mobile-view' : ''} ${mobileOpen ? 'mobile-menu-open' : ''}`}>
+        {isMobile && mobileOpen && (
           <div 
             className="mobile-sidebar-overlay"
-            onClick={() => setMobileMenuOpen(false)}
+            onClick={handleCloseMobile}
+            aria-label="Close sidebar"
           />
         )}
         
         <aside className={`sidebar ${isMobile ? 'mobile-sidebar' : ''}`}>
-          {(!isCollapsed || isMobile) ? (
+          {(!sidebarCollapsed || isMobile) ? (
             sidebar
           ) : (
             <div className="sidebar-rail">
               <button
                 type="button"
                 className="sidebar-rail-btn"
-                onClick={toggleSidebar}
+                onClick={handleToggle}
                 title="Expand sidebar (⌘B)"
                 aria-label="Expand sidebar"
               >

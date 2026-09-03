@@ -1,3 +1,5 @@
+import { MandrakLogo } from '../components/MandrakLogo';
+
 interface SignInProps {
   onSignIn: () => void;
   isLoading: boolean;
@@ -8,7 +10,10 @@ export function SignIn({ onSignIn, isLoading, error }: SignInProps) {
   return (
     <div className="sign-in-container">
       <div className="sign-in-card">
-        <h1>Welcome to MarkLoom</h1>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+          <MandrakLogo size={56} animated={true} />
+        </div>
+        <h1>Welcome to Mandrak</h1>
         <p className="subtitle">Fast, private, local-first markdown workspace</p>
         
         {error && (

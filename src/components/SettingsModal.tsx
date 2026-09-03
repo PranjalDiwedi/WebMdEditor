@@ -1,5 +1,6 @@
 import { Modal } from './Modal';
 import { Button } from './Button';
+import { MandrakLogo } from './MandrakLogo';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -74,8 +75,11 @@ export function SettingsModal({ isOpen, onClose, theme, onThemeChange }: Setting
         </div>
 
         <div className="setting-section" style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
-          <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>MarkLoom v2.0.0</p>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+            <MandrakLogo size={20} animated={false} />
+            <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>Mandrak</p>
+          </div>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             Fast, private, local-first markdown editor with native file system access and Google Drive cloud sync.
           </p>
         </div>

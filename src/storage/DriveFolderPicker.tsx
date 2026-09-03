@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { Button } from '../components/Button';
+import { GoogleDriveIcon } from '../components/GoogleDriveIcon';
 import type { GoogleDriveProvider } from './GoogleDriveProvider';
 
 interface DriveFolderPickerProps {
@@ -81,10 +82,8 @@ export function DriveFolderPicker({
           className="drive-root-option"
           onClick={() => onSelect(null, 'All Google Drive')}
         >
-          <div className="drive-root-icon-wrapper">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="20" height="20">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-            </svg>
+          <div className="drive-root-icon-wrapper" style={{ background: 'rgba(66, 133, 244, 0.12)' }}>
+            <GoogleDriveIcon size={20} />
           </div>
           <div className="drive-root-text">
             <strong>All Google Drive</strong>

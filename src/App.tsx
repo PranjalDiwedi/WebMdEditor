@@ -14,6 +14,9 @@ import { MainLayout } from './layout/MainLayout';
 import { Modal } from './components/Modal';
 import { Button } from './components/Button';
 import { SettingsModal } from './components/SettingsModal';
+import { MandrakLogo } from './components/MandrakLogo';
+import { preloadGoogleScripts } from './utils/googleScripts';
+import { OAUTH_CONFIGS } from './config/constants';
 import { exportToMarkdownFile, exportToHTMLFile, printContent } from './utils/exportHelpers';
 import { ensureMarkdownFileName, validateFileName } from './utils/fileValidation';
 import './App.css';
@@ -57,6 +60,7 @@ function App() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<{ id: string; name: string } | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isCreatingNote, setIsCreatingNote] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -79,6 +83,11 @@ function App() {
     closeFile
   } = useFileManagement(storageProvider);
 
+  // Preload Google Identity Services and Google Drive API for smooth popups across Firefox & Chrome
+  useEffect(() => {
+    preloadGoogleScripts(OAUTH_CONFIGS.google.apiKey || undefined);
+  }, []);
+
   // Handle theme changes
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -90,16 +99,29 @@ function App() {
   }, []);
 
   const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed((prev) => !prev);
+    if (window.innerWidth <= 768) {
+      setMobileMenuOpen((prev) => !prev);
+    } else {
+      setSidebarCollapsed((prev) => !prev);
+    }
   }, []);
+
+  const handleOpenFile = useCallback((fileId: string) => {
+    openFile(fileId);
+    setMobileMenuOpen(false);
+  }, [openFile]);
 
   const handleGoHome = useCallback(() => {
     closeFile();
     setStorageProvider(null);
+    setMobileMenuOpen(false);
   }, [closeFile]);
 
   const handleProviderSelected = useCallback((provider: StorageProvider | null) => {
     setStorageProvider(provider);
+    if (provider && window.innerWidth <= 768) {
+      setMobileMenuOpen(true);
+    }
   }, []);
 
   const handleDriveAuthenticated = useCallback((provider: GoogleDriveProvider) => {
@@ -112,6 +134,9 @@ function App() {
       pendingDriveProvider.setTargetFolder(folderId, folderName);
       setStorageProvider(pendingDriveProvider);
       setPendingDriveProvider(null);
+      if (window.innerWidth <= 768) {
+        setMobileMenuOpen(true);
+      }
     },
     [pendingDriveProvider]
   );
@@ -230,19 +255,40 @@ function App() {
         <MainLayout
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={toggleSidebar}
+          mobileMenuOpen={mobileMenuOpen}
+          onMobileMenuToggle={toggleSidebar}
+          onCloseMobileMenu={() => setMobileMenuOpen(false)}
           header={
             <header className="app-header">
               <div className="header-left">
+                {(storageProvider || recentFiles.length > 0) && (
+                  <button
+                    type="button"
+                    className={`sidebar-header-toggle-btn ${mobileMenuOpen ? 'active' : ''}`}
+                    onClick={toggleSidebar}
+                    title={mobileMenuOpen ? 'Close Notes Sidebar' : 'Toggle Notes Sidebar (⌘B)'}
+                    aria-label="Toggle Notes Sidebar"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18">
+                      {mobileMenuOpen ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                      )}
+                    </svg>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   className="brand-badge"
                   onClick={handleGoHome}
                   title="Go to Homepage"
-                  aria-label="MarkLoom Homepage"
+                  aria-label="Mandrak Homepage"
                 >
-                  <span className="brand-icon">✦</span>
-                  <span className="brand-text">MarkLoom</span>
-                  <span className="brand-pill">v2.0</span>
+                  <MandrakLogo size={22} animated={true} />
+                  <span className="brand-text">Mandrak</span>
+                  {/* <span className="brand-pill">v2.0</span> */}
                 </button>
 
                 {storageProvider && (
@@ -367,8 +413,11 @@ function App() {
               <FileBrowser
                 files={recentFiles}
                 currentFile={currentFile}
-                onFileSelect={openFile}
-                onCreateFile={() => setShowCreateModal(true)}
+                onFileSelect={handleOpenFile}
+                onCreateFile={() => {
+                  setShowCreateModal(true);
+                  setMobileMenuOpen(false);
+                }}
                 onDeleteFile={(fileId, fileName) => setFileToDelete({ id: fileId, name: fileName })}
                 onToggleSidebar={toggleSidebar}
                 searchQuery={searchQuery}
@@ -432,16 +481,42 @@ function App() {
                 <div className="empty-state-icon">📝</div>
                 <h2>No Note Selected</h2>
                 <p>Pick a note from the sidebar or start writing a new one</p>
-                <button
-                  type="button"
-                  className="btn-new-file"
-                  onClick={() => setShowCreateModal(true)}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span>Create New Note</span>
-                </button>
+                <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn-browse-notes"
+                    onClick={toggleSidebar}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      padding: '0.55rem 1rem',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--bg-surface)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-primary)',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      fontWeight: 600,
+                      transition: 'all 0.18s ease'
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                    <span>Browse Notes</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-new-file"
+                    onClick={() => setShowCreateModal(true)}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Create New Note</span>
+                  </button>
+                </div>
               </div>
             )}
 

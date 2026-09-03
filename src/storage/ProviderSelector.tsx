@@ -4,6 +4,8 @@ import { GoogleDriveProvider } from './GoogleDriveProvider';
 import { DropboxProvider } from './DropboxProvider';
 import { OneDriveProvider } from './OneDriveProvider';
 import { LocalProvider } from './LocalProvider';
+import { MandrakLogo } from '../components/MandrakLogo';
+import { GoogleDriveIcon } from '../components/GoogleDriveIcon';
 
 interface ProviderSelectorProps {
   onProviderSelected: (provider: StorageProvider | null) => void;
@@ -161,7 +163,11 @@ export function ProviderSelector({
   if (currentProvider && variant === 'compact') {
     return (
       <div className="storage-pill-compact">
-        <span className="status-dot" />
+        {currentProvider.type === 'google-drive' ? (
+          <GoogleDriveIcon size={14} />
+        ) : (
+          <span className="status-dot" />
+        )}
         <span>{currentProvider.name}</span>
         <button
           className="storage-change-btn"
@@ -184,7 +190,8 @@ export function ProviderSelector({
     <div className="storage-picker-panel">
       <div className="landing-container">
         <div className="landing-badge">
-          <span>✦</span> MarkLoom • Fast, Private, Local-First Markdown
+          <MandrakLogo size={18} animated={false} />
+          <span>Mandrak • Fast, Private, Local-First Markdown</span>
         </div>
 
         <h1 className="landing-headline">
@@ -225,10 +232,8 @@ export function ProviderSelector({
             className="landing-provider-card"
             onClick={() => !connectingProvider && handleConnect('google-drive')}
           >
-            <div className="provider-card-icon-wrapper" style={{ background: 'rgba(52, 211, 153, 0.15)', color: 'var(--success)' }}>
-              <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                <path d="M12.01 1.99a1.002 1.002 0 0 0-.87.5l-7.99 13.84a1 1 0 0 0 .86 1.5h4.29l3.71-6.42 3.71 6.42h4.29a1 1 0 0 0 .86-1.5L12.87 2.49a1.002 1.002 0 0 0-.86-.5zM7.5 18l-3.5 6.06a1 1 0 0 0 .87 1.5h14.26a1 1 0 0 0 .87-1.5L16.5 18H7.5z" />
-              </svg>
+            <div className="provider-card-icon-wrapper" style={{ background: 'rgba(66, 133, 244, 0.12)' }}>
+              <GoogleDriveIcon size={26} />
             </div>
             <div className="provider-card-content">
               <h3>Google Drive</h3>

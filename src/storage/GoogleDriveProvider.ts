@@ -149,11 +149,12 @@ export class GoogleDriveProvider extends StorageProvider {
           resolve();
         },
         error_callback: (error: { type?: string; message?: string }) => {
+          const isBlocked = error.type === 'popup_blocked_by_browser' || error.message?.includes('popup');
           reject(
             new Error(
-              error.message ||
-                error.type ||
-                'Google Drive popup was blocked or closed'
+              isBlocked
+                ? 'Google Drive popup was blocked by Firefox/browser. Please enable popups for this site and try again.'
+                : error.message || error.type || 'Google Drive popup was closed or blocked'
             )
           );
         },
