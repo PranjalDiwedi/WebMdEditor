@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { MarkdownFile } from '../types/file';
 import { formatFileSize } from '../utils/fileValidation';
 import { stripMarkdown } from '../utils/markdownParser';
+import { modSymbol } from '../utils/keyboard';
 
 export type NavMode = 'folders' | 'timeline';
 export type ViewDensity = 'cards' | 'compact';
@@ -376,7 +377,8 @@ export function FileBrowser({
   const renderNoteItem = (file: MarkdownFile, isInsideTree = false) => {
     const isActive = currentFile?.id === file.id;
     const isDragging = draggingItem?.id === file.id;
-    const previewText = stripMarkdown(file.content) || 'Empty note...';
+    const previewText = file.preview || (file.content ? stripMarkdown(file.content) : '');
+    const isPreviewLoading = !previewText && file.size > 0;
     const displayName = file.name.replace(/\.md$/i, '');
 
     if (density === 'compact') {
@@ -473,7 +475,16 @@ export function FileBrowser({
           <span className="file-card-time">{formatRelativeTime(file.modifiedAt)}</span>
         </div>
 
-        <div className="file-card-preview">{previewText}</div>
+        {isPreviewLoading ? (
+          <div className="file-card-preview is-loading">
+            <span className="preview-skeleton-line" />
+            <span className="preview-skeleton-line short" />
+          </div>
+        ) : previewText ? (
+          <div className="file-card-preview">{previewText}</div>
+        ) : (
+          <div className="file-card-preview is-empty">Empty note...</div>
+        )}
 
         <div className="file-card-footer">
           <span className="file-card-size">{formatFileSize(file.size)}</span>
@@ -538,9 +549,15 @@ export function FileBrowser({
 
   // Recursive Tree Node Renderer
   const renderTreeNode = (node: TreeNode, depth = 0) => {
+    const indentStep = density === 'cards' ? 8 : 10;
+
     if (node.type === 'file' && node.file) {
       return (
-        <div key={node.id} style={{ paddingLeft: `${depth * 14}px` }}>
+        <div
+          key={node.id}
+          className="tree-file-node"
+          style={{ paddingLeft: `${depth * indentStep}px` }}
+        >
           {renderNoteItem(node.file, true)}
         </div>
       );
@@ -622,7 +639,7 @@ export function FileBrowser({
           onDragLeave={handleFolderDragLeave}
           onDrop={handleFolderDrop}
           className={`tree-folder-row ${isExpanded ? 'expanded' : ''} ${isTargetActive ? 'drop-target-active' : ''} ${isDraggingFolder ? 'dragging-item' : ''}`}
-          style={{ paddingLeft: `${depth * 14 + 6}px` }}
+          style={{ paddingLeft: `${depth * indentStep + 6}px` }}
           onClick={() => toggleFolder(node.path)}
         >
           <div className="tree-folder-left">
@@ -684,7 +701,39 @@ export function FileBrowser({
   return (
     <div className={`file-browser density-${density} mode-${navMode}`}>
       {/* 1. Header Toolbar */}
-      <div className="sidebar-header">
+      <div
+        className={`sidebar-header ${dragOverTarget === '__root__' ? 'drop-target-active' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setDragOverTarget('__root__');
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          if (dragOverTarget === '__root__') {
+            setDragOverTarget(null);
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragOverTarget(null);
+          setDraggingItem(null);
+          try {
+            const data = JSON.parse(e.dataTransfer.getData('application/json') || '{}');
+            if (data.type === 'file' && onMoveFile) {
+              onMoveFile(data.id, '');
+            } else if (data.type === 'folder' && onMoveFolder) {
+              onMoveFolder(data.path, '');
+            }
+          } catch {}
+        }}
+        title="Drop notes or folders here to move to Root"
+      >
         <div className="sidebar-title-group">
           <span>{storageName || 'Notes'}</span>
           <span className="sidebar-count-badge">{files.length}</span>
@@ -695,7 +744,7 @@ export function FileBrowser({
             type="button"
             className="sidebar-header-action-btn"
             onClick={() => onCreateFile()}
-            title="New Note in Root (⌘N)"
+            title={`New Note in Root (${modSymbol}N)`}
             aria-label="New Note in Root"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="15" height="15">
@@ -722,7 +771,7 @@ export function FileBrowser({
               type="button"
               className="sidebar-header-action-btn sidebar-collapse-btn"
               onClick={onToggleSidebar}
-              title="Collapse sidebar (⌘B)"
+              title={`Collapse sidebar (${modSymbol}\\)`}
               aria-label="Collapse sidebar"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="15" height="15">
@@ -854,24 +903,44 @@ export function FileBrowser({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
+            id="mandrak-search-input"
             type="text"
             className="search-input"
             placeholder={navMode === 'folders' ? 'Search files & folders...' : 'Search notes...'}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                if (searchQuery) {
+                  onSearchChange('');
+                } else {
+                  e.currentTarget.blur();
+                }
+              }
+            }}
           />
           {searchQuery ? (
             <button
               className="search-clear-btn"
               onClick={() => onSearchChange('')}
-              title="Clear search"
+              title="Clear search (Esc)"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           ) : (
-            <span className="search-shortcut-badge">⌘K</span>
+            <button
+              type="button"
+              className="search-shortcut-badge"
+              onClick={() => {
+                const el = document.getElementById('mandrak-search-input') as HTMLInputElement | null;
+                el?.focus();
+              }}
+              title={`Focus search (${modSymbol}K)`}
+            >
+              {modSymbol}K
+            </button>
           )}
         </div>
       </div>
@@ -980,70 +1049,6 @@ export function FileBrowser({
           </div>
         ) : navMode === 'folders' ? (
           <div className="tree-explorer-view">
-            {/* Top Root Vault Banner - Also acts as drop target for root */}
-            <div
-              className={`tree-root-header ${dragOverTarget === '__root__' ? 'drop-target-active' : ''}`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                e.dataTransfer.dropEffect = 'move';
-              }}
-              onDragEnter={(e) => {
-                e.preventDefault();
-                setDragOverTarget('__root__');
-              }}
-              onDragLeave={(e) => {
-                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                if (dragOverTarget === '__root__') {
-                  setDragOverTarget(null);
-                }
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setDragOverTarget(null);
-                setDraggingItem(null);
-                try {
-                  const data = JSON.parse(e.dataTransfer.getData('application/json') || '{}');
-                  if (data.type === 'file' && onMoveFile) {
-                    onMoveFile(data.id, '');
-                  } else if (data.type === 'folder' && onMoveFolder) {
-                    onMoveFolder(data.path, '');
-                  }
-                } catch {}
-              }}
-              title="Root Vault (Drop notes or folders here to move to Root)"
-            >
-              <div className="tree-root-info">
-                <span className="tree-root-icon">📁</span>
-                <span className="tree-root-name">{storageName || 'Root Vault'}</span>
-              </div>
-              <div className="tree-root-actions" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  className="tree-action-btn"
-                  onClick={() => onCreateFile()}
-                  title="Create Note in Root (/)"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </button>
-                {onCreateFolder && (
-                  <button
-                    type="button"
-                    className="tree-action-btn"
-                    onClick={() => onCreateFolder()}
-                    title="Create Folder in Root (/)"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            </div>
-
             {treeData.map((node) => renderTreeNode(node, 0))}
           </div>
         ) : (

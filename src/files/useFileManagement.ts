@@ -9,6 +9,11 @@ import { sanitizeFileContent } from '../utils/htmlSanitizer';
 import { toUserError } from '../utils/securityErrors';
 import { ensureMarkdownFileName } from '../utils/fileValidation';
 import { exportToMarkdownFile } from '../utils/exportHelpers';
+import {
+  setCachedPreview,
+  removeCachedPreview,
+  hydrateFilesWithCachedPreviews,
+} from '../utils/previewCache';
 
 // Workspace key generator to cleanly isolate data across Local Vault and Cloud Storage
 function getWorkspaceKey(storageProvider: StorageProvider | null): string {
@@ -86,6 +91,56 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // Helper to stream file previews asynchronously in non-blocking background batches
+  const streamPreviewsInBackground = useCallback(
+    (
+      filesToStream: MarkdownFile[],
+      provider: StorageProvider,
+      targetWorkspaceKey: string,
+      isCancelled: () => boolean
+    ) => {
+      const concurrency = provider.type === 'local' ? 4 : 2;
+      const queue = [...filesToStream];
+
+      const processNext = async () => {
+        while (queue.length > 0) {
+          if (isCancelled()) return;
+          const file = queue.shift();
+          if (!file) break;
+
+          try {
+            const rawContent = await provider.readFile(file.id);
+            if (isCancelled()) return;
+
+            const preview = stripMarkdown(rawContent);
+            const modifiedMs =
+              file.modifiedAt instanceof Date
+                ? file.modifiedAt.getTime()
+                : new Date(file.modifiedAt || 0).getTime();
+
+            // Cache in localStorage
+            setCachedPreview(targetWorkspaceKey, file.id, preview, modifiedMs, file.size);
+
+            // Update UI state
+            setRecentFiles((prev) =>
+              prev.map((f) => (f.id === file.id ? { ...f, preview } : f))
+            );
+          } catch {
+            // Ignore preview read errors gracefully
+          }
+
+          // Small yield to maintain 60 FPS
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      };
+
+      for (let i = 0; i < concurrency; i++) {
+        processNext();
+      }
+    },
+    []
+  );
+
   // Helper to load local vault files
   const loadLocalVaultFiles = useCallback(() => {
     const key = 'local_vault';
@@ -99,9 +154,11 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       isPinned: pinnedIds.includes(file.id),
       modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
       createdAt: file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt || Date.now()),
+      preview: file.preview || (file.content ? stripMarkdown(file.content) : undefined),
     }));
 
-    setRecentFiles(normalized);
+    const hydrated = hydrateFilesWithCachedPreviews(key, normalized);
+    setRecentFiles(hydrated);
     setCustomFolders(getStoredFolders(key));
   }, []);
 
@@ -128,20 +185,30 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         const files = await storageProvider.listFiles();
         if (cancelled) return;
         const pinnedIds = getPinnedIds(currentKey);
-        setRecentFiles(
-          files.map((file) => ({
-            id: file.id,
-            name: file.name,
-            content: file.content || '',
-            path: file.path || file.name,
-            provider: file.provider,
-            modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
-            createdAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
-            size: file.size,
-            isDirty: false,
-            isPinned: pinnedIds.includes(file.id),
-          }))
-        );
+        
+        const mappedFiles: MarkdownFile[] = files.map((file) => ({
+          id: file.id,
+          name: file.name,
+          content: file.content || '',
+          path: file.path || file.name,
+          provider: file.provider,
+          modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
+          createdAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
+          size: file.size,
+          isDirty: false,
+          isPinned: pinnedIds.includes(file.id),
+          preview: file.content ? stripMarkdown(file.content) : undefined,
+        }));
+
+        // 1. Instantly hydrate from preview cache (0ms)
+        const hydratedFiles = hydrateFilesWithCachedPreviews(currentKey, mappedFiles);
+        setRecentFiles(hydratedFiles);
+
+        // 2. Identify files that still need background preview streaming
+        const needsStreaming = hydratedFiles.filter((f) => !f.preview && f.size > 0);
+        if (needsStreaming.length > 0) {
+          streamPreviewsInBackground(needsStreaming, storageProvider, currentKey, () => cancelled);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(toUserError(err, 'Failed to load files'));
@@ -157,12 +224,13 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     return () => {
       cancelled = true;
     };
-  }, [storageProvider, loadLocalVaultFiles]);
+  }, [storageProvider, loadLocalVaultFiles, streamPreviewsInBackground]);
 
   const saveToRecentFiles = useCallback((file: MarkdownFile) => {
     const key = workspaceKeyRef.current;
     const safeFile = {
       ...file,
+      preview: file.preview || stripMarkdown(file.content),
       modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
       createdAt: file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt || Date.now()),
     };
@@ -181,10 +249,12 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     const safeName = ensureMarkdownFileName(name);
     const cleanDir = path ? path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') : '';
     const fullPath = cleanDir ? `${cleanDir}/${safeName}` : safeName;
+    const preview = stripMarkdown(content);
     const draftFile: MarkdownFile = {
       id: `draft_${Date.now()}`,
       name: safeName,
       content,
+      preview,
       path: fullPath,
       provider: 'local',
       modifiedAt: new Date(),
@@ -193,6 +263,8 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       isDirty: false,
       isPinned: false,
     };
+    const key = workspaceKeyRef.current;
+    setCachedPreview(key, draftFile.id, preview, draftFile.modifiedAt.getTime(), draftFile.size);
     setCurrentFile(draftFile);
     saveToRecentFiles(draftFile);
   }, [saveToRecentFiles]);
@@ -214,6 +286,8 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     try {
       const rawContent = await storageProvider.readFile(fileId);
       const content = sanitizeFileContent(rawContent);
+      const preview = stripMarkdown(content);
+      const key = workspaceKeyRef.current;
       const existing = recentFiles.find((f) => f.id === fileId);
 
       let markdownFile: MarkdownFile;
@@ -221,6 +295,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         markdownFile = {
           ...existing,
           content,
+          preview,
           isDirty: false,
           size: content.length,
         };
@@ -234,6 +309,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
           id: fileData.id,
           name: fileData.name,
           content,
+          preview,
           path: fileData.path,
           provider: fileData.provider,
           modifiedAt: fileData.modifiedAt,
@@ -242,6 +318,9 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
           isDirty: false,
         };
       }
+
+      const modMs = markdownFile.modifiedAt instanceof Date ? markdownFile.modifiedAt.getTime() : new Date(markdownFile.modifiedAt || 0).getTime();
+      setCachedPreview(key, markdownFile.id, preview, modMs, markdownFile.size);
 
       setCurrentFile(markdownFile);
       saveToRecentFiles(markdownFile);
@@ -258,11 +337,21 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       return;
     }
 
+    const key = workspaceKeyRef.current;
+    const preview = stripMarkdown(currentFile.content);
+
     if (!storageProvider) {
       exportToMarkdownFile(currentFile.content, currentFile.name);
-      const updated = { ...currentFile, isDirty: false, modifiedAt: new Date() };
+      const updated = { ...currentFile, preview, isDirty: false, modifiedAt: new Date(), size: currentFile.content.length };
+      setCachedPreview(key, updated.id, preview, updated.modifiedAt.getTime(), updated.size);
       setCurrentFile(updated);
       saveToRecentFiles(updated);
+      showToast({
+        id: `save-draft-${currentFile.id}-${Date.now()}`,
+        type: 'success',
+        message: `Saved & downloaded "${currentFile.name}"`,
+        duration: 2200,
+      });
       return;
     }
 
@@ -274,19 +363,34 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       
       const updatedFile = {
         ...currentFile,
+        preview,
         isDirty: false,
         modifiedAt: new Date(),
         size: currentFile.content.length,
       };
       
+      setCachedPreview(key, updatedFile.id, preview, updatedFile.modifiedAt.getTime(), updatedFile.size);
       setCurrentFile(updatedFile);
       saveToRecentFiles(updatedFile);
+      showToast({
+        id: `save-${currentFile.id}-${Date.now()}`,
+        type: 'success',
+        message: `Saved "${currentFile.name}"`,
+        duration: 2200,
+      });
     } catch (err) {
-      setError(toUserError(err, 'Failed to save file'));
+      const errMsg = toUserError(err, 'Failed to save file');
+      setError(errMsg);
+      showToast({
+        id: `save-err-${currentFile.id}-${Date.now()}`,
+        type: 'error',
+        message: `Failed to save "${currentFile.name}": ${errMsg}`,
+        duration: 4000,
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [currentFile, storageProvider, saveToRecentFiles]);
+  }, [currentFile, storageProvider, saveToRecentFiles, showToast]);
 
   const createFile = useCallback(async (name: string, content: string, path?: string) => {
     if (!storageProvider) {
@@ -299,11 +403,14 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
     try {
       const newFile = await storageProvider.createFile(name, content, path);
+      const preview = stripMarkdown(content);
+      const key = workspaceKeyRef.current;
       
       const markdownFile: MarkdownFile = {
         id: newFile.id,
         name: newFile.name,
         content: newFile.content,
+        preview,
         path: newFile.path || path || newFile.name,
         provider: newFile.provider,
         modifiedAt: newFile.modifiedAt,
@@ -312,6 +419,9 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         isDirty: false,
         isPinned: false,
       };
+
+      const modMs = markdownFile.modifiedAt instanceof Date ? markdownFile.modifiedAt.getTime() : new Date(markdownFile.modifiedAt || 0).getTime();
+      setCachedPreview(key, markdownFile.id, preview, modMs, markdownFile.size);
 
       setCurrentFile(markdownFile);
       saveToRecentFiles(markdownFile);
@@ -520,6 +630,8 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         await storageProvider.deleteFile(fileId);
       }
       
+      removeCachedPreview(key, fileId);
+
       if (currentFile?.id === fileId) {
         setCurrentFile(null);
       }
@@ -549,18 +661,29 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
   const updateFileContent = useCallback((content: string) => {
     if (currentFile) {
-      setCurrentFile({
+      const preview = stripMarkdown(content);
+      const updated: MarkdownFile = {
         ...currentFile,
         content,
+        preview,
         isDirty: true,
-      });
+        size: content.length,
+      };
+      setCurrentFile(updated);
+      setRecentFiles((prev) =>
+        prev.map((f) =>
+          f.id === currentFile.id ? { ...f, preview, isDirty: true, size: content.length } : f
+        )
+      );
     }
   }, [currentFile]);
 
   const filteredFiles = recentFiles.filter((file) => {
     const query = searchQuery.toLowerCase();
     const name = file.name.toLowerCase();
-    const content = stripMarkdown(file.content).toLowerCase();
+    const content = file.preview
+      ? file.preview.toLowerCase()
+      : stripMarkdown(file.content).toLowerCase();
     return name.includes(query) || content.includes(query);
   });
 

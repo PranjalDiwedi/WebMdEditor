@@ -1,4 +1,5 @@
 import { useEditor as useTipTapEditor } from '@tiptap/react';
+import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
@@ -6,6 +7,83 @@ import TextAlign from '@tiptap/extension-text-align';
 import { Markdown } from 'tiptap-markdown';
 import { sanitizeFileContent } from '../utils/htmlSanitizer';
 import { useEffect, useRef } from 'react';
+
+/**
+ * Custom TipTap extension for universal markdown shortcuts (Headings, Strikethrough, Code blocks, Lists, Links, and Direct Save).
+ */
+const createMarkdownShortcutsExtension = (getOnSave: () => (() => void) | undefined) =>
+  Extension.create({
+    name: 'markdownShortcuts',
+    addKeyboardShortcuts() {
+      return {
+        // Direct Save (Mod-S)
+        'Mod-s': () => {
+          const onSave = getOnSave();
+          if (onSave) {
+            onSave();
+          }
+          return true;
+        },
+        'Mod-S': () => {
+          const onSave = getOnSave();
+          if (onSave) {
+            onSave();
+          }
+          return true;
+        },
+
+        // Insert / Edit Link (Mod-K)
+        'Mod-k': () => {
+          const previousUrl = this.editor.getAttributes('link').href;
+          const url = window.prompt('Enter URL:', previousUrl);
+          if (url === null) return true;
+          if (url === '') {
+            this.editor.chain().focus().extendMarkRange('link').unsetLink().run();
+            return true;
+          }
+          this.editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+          return true;
+        },
+
+        // Headings (Mod-Alt-1..3 or Mod-1..3)
+        'Mod-Alt-1': () => this.editor.chain().focus().toggleHeading({ level: 1 }).run(),
+        'Mod-Alt-2': () => this.editor.chain().focus().toggleHeading({ level: 2 }).run(),
+        'Mod-Alt-3': () => this.editor.chain().focus().toggleHeading({ level: 3 }).run(),
+        'Mod-Alt-0': () => this.editor.chain().focus().setParagraph().run(),
+        'Mod-1': () => this.editor.chain().focus().toggleHeading({ level: 1 }).run(),
+        'Mod-2': () => this.editor.chain().focus().toggleHeading({ level: 2 }).run(),
+        'Mod-3': () => this.editor.chain().focus().toggleHeading({ level: 3 }).run(),
+        'Mod-0': () => this.editor.chain().focus().setParagraph().run(),
+
+        // Strikethrough (Mod-Shift-X or Mod-Alt-S)
+        'Mod-Shift-x': () => this.editor.chain().focus().toggleStrike().run(),
+        'Mod-Shift-X': () => this.editor.chain().focus().toggleStrike().run(),
+        'Mod-Alt-s': () => this.editor.chain().focus().toggleStrike().run(),
+
+        // Code Block (Mod-Alt-C or Mod-Shift-C)
+        'Mod-Alt-c': () => this.editor.chain().focus().toggleCodeBlock().run(),
+        'Mod-Shift-c': () => this.editor.chain().focus().toggleCodeBlock().run(),
+        'Mod-Shift-C': () => this.editor.chain().focus().toggleCodeBlock().run(),
+
+        // Bullet List (Mod-Shift-8 or Mod-Alt-U)
+        'Mod-Shift-8': () => this.editor.chain().focus().toggleBulletList().run(),
+        'Mod-Alt-u': () => this.editor.chain().focus().toggleBulletList().run(),
+
+        // Numbered List (Mod-Shift-7 or Mod-Alt-O)
+        'Mod-Shift-7': () => this.editor.chain().focus().toggleOrderedList().run(),
+        'Mod-Alt-o': () => this.editor.chain().focus().toggleOrderedList().run(),
+
+        // Blockquote (Mod-Shift-. or Mod-Alt-Q)
+        'Mod-Shift-.': () => this.editor.chain().focus().toggleBlockquote().run(),
+        'Mod-Alt-q': () => this.editor.chain().focus().toggleBlockquote().run(),
+
+        // Horizontal Rule (Mod-Shift-H or Mod-Shift--)
+        'Mod-Shift-h': () => this.editor.chain().focus().setHorizontalRule().run(),
+        'Mod-Shift-H': () => this.editor.chain().focus().setHorizontalRule().run(),
+        'Mod-Shift--': () => this.editor.chain().focus().setHorizontalRule().run(),
+      };
+    },
+  });
 
 /**
  * Extracts formatted markdown string from TipTap editor instance.
@@ -30,8 +108,10 @@ function extractMarkdown(editor: unknown): string {
   return '';
 }
 
-export function useEditor(content: string, onUpdate: (content: string) => void) {
+export function useEditor(content: string, onUpdate: (content: string) => void, onSave?: () => void) {
   const isUpdatingFromExternal = useRef(false);
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
 
   const editor = useTipTapEditor({
     extensions: [
@@ -78,6 +158,7 @@ export function useEditor(content: string, onUpdate: (content: string) => void) 
         transformPastedText: true,
         transformCopiedText: true,
       }),
+      createMarkdownShortcutsExtension(() => onSaveRef.current),
     ],
     content: sanitizeFileContent(content),
     editorProps: {

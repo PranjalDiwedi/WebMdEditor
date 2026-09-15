@@ -21,6 +21,7 @@ import { preloadGoogleScripts } from './utils/googleScripts';
 import { OAUTH_CONFIGS } from './config/constants';
 import { exportToMarkdownFile, exportToHTMLFile, printContent } from './utils/exportHelpers';
 import { ensureMarkdownFileName, validateFileName } from './utils/fileValidation';
+import { modSymbol, focusSearchInput } from './utils/keyboard';
 import './App.css';
 
 const NOTE_TEMPLATES = [
@@ -299,27 +300,104 @@ function App() {
   }, [currentFile]);
 
   // Global Keyboard Shortcuts
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.metaKey || e.ctrlKey) {
-      if (e.key === 's') {
-        e.preventDefault();
-        if (currentFile) {
-          handleSaveFile();
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      const target = e.target as HTMLElement | null;
+      const isInsideEditor = target ? target.closest('.tiptap-editor-content') !== null || target.isContentEditable : false;
+      const isInsideInput = target ? target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' : false;
+
+      if (isMod) {
+        // 1. Save Note: Mod+S
+        if (key === 's') {
+          e.preventDefault();
+          if (currentFile) {
+            handleSaveFile();
+          }
+          return;
         }
-      } else if (e.key === 'p') {
-        e.preventDefault();
-        setViewMode((prev) => (prev === 'edit' ? 'split' : prev === 'split' ? 'preview' : 'edit'));
-      } else if (e.key === 'b' || e.key === 'B') {
-        e.preventDefault();
-        toggleSidebar();
-      } else if (e.key === 'n' && !e.shiftKey) {
-        e.preventDefault();
-        if (storageProvider) {
-          setShowCreateModal(true);
+
+        // 2. Cycle View Mode: Mod+P
+        if (key === 'p') {
+          e.preventDefault();
+          setViewMode((prev) => (prev === 'edit' ? 'split' : prev === 'split' ? 'preview' : 'edit'));
+          return;
+        }
+
+        // 3. Create New Note: Mod+N
+        if (key === 'n' && !e.shiftKey) {
+          e.preventDefault();
+          handleOpenCreateModal();
+          return;
+        }
+
+        // 4. Toggle Sidebar: Mod+\ (or Mod+B when not in editor/input)
+        if (e.key === '\\' || (!isInsideEditor && !isInsideInput && key === 'b')) {
+          e.preventDefault();
+          toggleSidebar();
+          return;
+        }
+
+        // 5. Search Focus: Mod+K (when not inside editor)
+        if (key === 'k') {
+          if (!isInsideEditor) {
+            e.preventDefault();
+            if (sidebarCollapsed) {
+              setSidebarCollapsed(false);
+            }
+            if (!mobileMenuOpen) {
+              setMobileMenuOpen(true);
+            }
+            setTimeout(() => {
+              focusSearchInput();
+            }, 50);
+            return;
+          }
         }
       }
-    }
-  }, [currentFile, storageProvider, handleSaveFile, toggleSidebar]);
+
+      // 6. Escape Key Handler
+      if (e.key === 'Escape') {
+        if (showCreateModal) {
+          if (!isCreatingNote) {
+            setShowCreateModal(false);
+            setCreateNameError(null);
+            setCreateFolderPath(undefined);
+          }
+        } else if (showCreateFolderModal) {
+          setShowCreateFolderModal(false);
+          setCreateFolderError(null);
+          setParentFolderPath(undefined);
+        } else if (showSettings) {
+          setShowSettings(false);
+        } else if (fileToDelete) {
+          setFileToDelete(null);
+        } else if (fileToMove) {
+          setFileToMove(null);
+        } else if (mobileMenuOpen) {
+          setMobileMenuOpen(false);
+        } else if (showExportMenu) {
+          setShowExportMenu(false);
+        }
+      }
+    },
+    [
+      currentFile,
+      handleSaveFile,
+      handleOpenCreateModal,
+      toggleSidebar,
+      sidebarCollapsed,
+      mobileMenuOpen,
+      showCreateModal,
+      isCreatingNote,
+      showCreateFolderModal,
+      showSettings,
+      fileToDelete,
+      fileToMove,
+      showExportMenu,
+    ]
+  );
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -352,7 +430,7 @@ function App() {
                     type="button"
                     className={`sidebar-header-toggle-btn ${mobileMenuOpen ? 'active' : ''}`}
                     onClick={toggleSidebar}
-                    title={mobileMenuOpen ? 'Close Notes Sidebar' : 'Toggle Notes Sidebar (⌘B)'}
+                    title={mobileMenuOpen ? 'Close Notes Sidebar' : `Toggle Notes Sidebar (${modSymbol}\\)`}
                     aria-label="Toggle Notes Sidebar"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18">
@@ -405,7 +483,7 @@ function App() {
                       type="button"
                       className={`view-mode-btn ${viewMode === 'split' ? 'active' : ''}`}
                       onClick={() => setViewMode('split')}
-                      title="Split View (⌘P)"
+                      title={`Split View (${modSymbol}P)`}
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4H5a2 2 0 00-2 2v12a2 2 0 002 2h4m6-16h4a2 2 0 012 2v12a2 2 0 01-2 2h-4m-3-16v16" />
@@ -522,7 +600,7 @@ function App() {
                     type="button"
                     className="sidebar-toggle-btn"
                     onClick={toggleSidebar}
-                    title="Collapse sidebar (⌘B)"
+                    title={`Collapse sidebar (${modSymbol}\\)`}
                     aria-label="Collapse sidebar"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
@@ -674,7 +752,13 @@ function App() {
           }}
           title={createFolderPath ? `Create Note in "${createFolderPath}"` : "Create New Note"}
         >
-          <div className="create-file-modal">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleCreateFile();
+            }}
+            className="create-file-modal"
+          >
             {createFolderPath && (
               <div style={{ padding: '0.4rem 0.65rem', background: 'var(--bg-app)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <span>📁</span>
@@ -729,6 +813,7 @@ function App() {
             <div className="modal-actions">
               <Button
                 variant="secondary"
+                type="button"
                 disabled={isCreatingNote}
                 onClick={() => {
                   if (!isCreatingNote) {
@@ -740,7 +825,7 @@ function App() {
                 Cancel
               </Button>
               <Button
-                onClick={handleCreateFile}
+                type="submit"
                 disabled={!newFileName.trim() || isCreatingNote}
               >
                 {isCreatingNote ? (
@@ -752,7 +837,7 @@ function App() {
                 )}
               </Button>
             </div>
-          </div>
+          </form>
         </Modal>
 
         {/* Delete Note Confirmation Modal */}

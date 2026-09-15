@@ -1,6 +1,7 @@
 import { Modal } from './Modal';
 import { Button } from './Button';
 import { MandrakLogo } from './MandrakLogo';
+import { modSymbol, altSymbol, shiftSymbol } from '../utils/keyboard';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -9,19 +10,49 @@ interface SettingsModalProps {
   onThemeChange: (theme: 'light' | 'dark') => void;
 }
 
-const SHORTCUTS = [
-  { key: '⌘S / Ctrl+S', desc: 'Save current note' },
-  { key: '⌘P / Ctrl+P', desc: 'Cycle view mode (Edit / Split / Preview)' },
-  { key: '⌘N / Ctrl+N', desc: 'Create new note' },
-  { key: '⌘B / Ctrl+B', desc: 'Bold text' },
-  { key: '⌘I / Ctrl+I', desc: 'Italic text' },
-  { key: '⌘E / Ctrl+E', desc: 'Inline code' },
-  { key: '⌘K / Ctrl+K', desc: 'Insert link' },
-  { key: '⌘Z / Ctrl+Z', desc: 'Undo' },
-  { key: '⌘⇧Z / Ctrl+Y', desc: 'Redo' },
-];
+interface ShortcutItem {
+  key: string;
+  desc: string;
+}
+
+interface ShortcutGroup {
+  groupName: string;
+  items: ShortcutItem[];
+}
 
 export function SettingsModal({ isOpen, onClose, theme, onThemeChange }: SettingsModalProps) {
+  const shortcutGroups: ShortcutGroup[] = [
+    {
+      groupName: 'General & Navigation',
+      items: [
+        { key: `${modSymbol}S`, desc: 'Save current note' },
+        { key: `${modSymbol}N`, desc: 'Create new note' },
+        { key: `${modSymbol}P`, desc: 'Cycle view mode (Edit / Split / Preview)' },
+        { key: `${modSymbol}\\`, desc: 'Toggle sidebar' },
+        { key: `${modSymbol}K`, desc: 'Focus note search' },
+        { key: 'Esc', desc: 'Close dialog / Clear search' },
+      ],
+    },
+    {
+      groupName: 'Markdown Editor Formatting',
+      items: [
+        { key: `${modSymbol}B`, desc: 'Bold text' },
+        { key: `${modSymbol}I`, desc: 'Italic text' },
+        { key: `${modSymbol}${shiftSymbol}X`, desc: 'Strikethrough' },
+        { key: `${modSymbol}E`, desc: 'Inline code' },
+        { key: `${modSymbol}K`, desc: 'Insert / Edit link' },
+        { key: `${modSymbol}${altSymbol}1..3`, desc: 'Heading 1 / 2 / 3' },
+        { key: `${modSymbol}${shiftSymbol}8`, desc: 'Bullet list' },
+        { key: `${modSymbol}${shiftSymbol}7`, desc: 'Numbered list' },
+        { key: `${modSymbol}${shiftSymbol}.`, desc: 'Blockquote' },
+        { key: `${modSymbol}${altSymbol}C`, desc: 'Code block' },
+        { key: `${modSymbol}${shiftSymbol}H`, desc: 'Horizontal divider' },
+        { key: 'Tab / ⇧Tab', desc: 'Indent / Outdent list' },
+        { key: `${modSymbol}Z / ${modSymbol}${shiftSymbol}Z`, desc: 'Undo / Redo' },
+      ],
+    },
+  ];
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings & Shortcuts">
       <div className="settings-modal" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -51,24 +82,31 @@ export function SettingsModal({ isOpen, onClose, theme, onThemeChange }: Setting
           <h4 style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
             Keyboard Shortcuts
           </h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '180px', overflowY: 'auto' }}>
-            {SHORTCUTS.map((item, i) => (
-              <div
-                key={i}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.35rem 0.5rem',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'var(--bg-app)',
-                  fontSize: '0.8125rem',
-                }}
-              >
-                <span style={{ color: 'var(--text-secondary)' }}>{item.desc}</span>
-                <kbd style={{ fontFamily: 'var(--font-mono)', fontSize: '0.725rem', background: 'var(--bg-surface)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-                  {item.key}
-                </kbd>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', maxHeight: '240px', overflowY: 'auto', paddingRight: '0.25rem' }}>
+            {shortcutGroups.map((group, gIdx) => (
+              <div key={gIdx} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  {group.groupName}
+                </span>
+                {group.items.map((item, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.35rem 0.5rem',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-app)',
+                      fontSize: '0.8125rem',
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-secondary)' }}>{item.desc}</span>
+                    <kbd style={{ fontFamily: 'var(--font-mono)', fontSize: '0.725rem', background: 'var(--bg-surface)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+                      {item.key}
+                    </kbd>
+                  </div>
+                ))}
               </div>
             ))}
           </div>

@@ -23,7 +23,7 @@ export function TipTapEditor({
   isSaving = false,
   viewMode = 'edit',
 }: TipTapEditorProps) {
-  const editor = useEditor(content, onContentChange);
+  const editor = useEditor(content, onContentChange, onSave);
 
   // Compute document statistics
   const stats = useMemo(() => {

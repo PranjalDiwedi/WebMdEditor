@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { modSymbol } from '../utils/keyboard';
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -12,9 +13,9 @@ interface MainLayoutProps {
   onCloseMobileMenu?: () => void;
 }
 
-const MIN_SIDEBAR_WIDTH = 230;
+const MIN_SIDEBAR_WIDTH = 260;
 const MAX_SIDEBAR_WIDTH = 480;
-const DEFAULT_SIDEBAR_WIDTH = 280;
+const DEFAULT_SIDEBAR_WIDTH = 290;
 
 export function MainLayout({
   children,
@@ -154,7 +155,7 @@ export function MainLayout({
                 type="button"
                 className="sidebar-rail-btn"
                 onClick={handleToggle}
-                title="Expand sidebar (⌘B)"
+                title={`Expand sidebar (${modSymbol}\\)`}
                 aria-label="Expand sidebar"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18">

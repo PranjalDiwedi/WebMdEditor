@@ -10,6 +10,7 @@ export interface MarkdownFile {
   isDirty: boolean;
   isPinned?: boolean;
   isMoving?: boolean;
+  preview?: string;
 }
 
 export interface FileState {
