@@ -1,10 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { MarkdownFile, FileState, FileOperations } from '../types/file';
 import type { ToastMessage } from '../components/Toast';
 import { StorageProvider } from '../storage/StorageProvider';
 import { getFromStorage, setToStorage } from '../utils/storageHelpers';
 import { STORAGE_KEYS } from '../config/constants';
-import { stripMarkdown } from '../utils/markdownParser';
+import { stripMarkdown, normalizeMarkdown } from '../utils/markdownParser';
 import { sanitizeFileContent } from '../utils/htmlSanitizer';
 import { toUserError } from '../utils/securityErrors';
 import { ensureMarkdownFileName } from '../utils/fileValidation';
@@ -53,6 +53,26 @@ function saveStoredFolders(workspaceKey: string, folders: string[]): void {
   } catch {}
 }
 
+interface StoredTabsData {
+  openTabIds: string[];
+  activeTabId: string | null;
+}
+
+function getStoredTabs(workspaceKey: string): StoredTabsData {
+  try {
+    const raw = localStorage.getItem(`mandrak_tabs_${workspaceKey}`);
+    return raw ? JSON.parse(raw) : { openTabIds: [], activeTabId: null };
+  } catch {
+    return { openTabIds: [], activeTabId: null };
+  }
+}
+
+function saveStoredTabs(workspaceKey: string, data: StoredTabsData): void {
+  try {
+    localStorage.setItem(`mandrak_tabs_${workspaceKey}`, JSON.stringify(data));
+  } catch {}
+}
+
 export function useFileManagement(storageProvider: StorageProvider | null): FileState & FileOperations & {
   customFolders: string[];
   toasts: ToastMessage[];
@@ -66,19 +86,32 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
   togglePinFile: (fileId: string) => void;
   moveFile: (fileId: string, destinationFolderPath: string) => Promise<void>;
   moveFolder: (sourceFolderPath: string, destinationFolderPath: string) => Promise<void>;
-  closeFile: () => void;
+  closeFile: (fileId?: string) => void;
+  closeTab: (fileId: string) => void;
+  closeOtherTabs: (fileId: string) => void;
+  closeAllTabs: () => void;
+  setActiveTab: (fileId: string) => void;
+  reorderTabs: (startIndex: number, endIndex: number) => void;
+  syncSavedContent: (fileId: string, normalizedContent: string) => void;
 } {
   const workspaceKey = getWorkspaceKey(storageProvider);
   const workspaceKeyRef = useRef(workspaceKey);
   workspaceKeyRef.current = workspaceKey;
 
-  const [currentFile, setCurrentFile] = useState<MarkdownFile | null>(null);
+  const [openTabs, setOpenTabs] = useState<MarkdownFile[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [recentFiles, setRecentFiles] = useState<MarkdownFile[]>([]);
   const [customFolders, setCustomFolders] = useState<string[]>(() => getStoredFolders(workspaceKey));
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Derived current active document
+  const currentFile = useMemo(() => {
+    if (!activeTabId || openTabs.length === 0) return null;
+    return openTabs.find((tab) => tab.id === activeTabId) || null;
+  }, [openTabs, activeTabId]);
 
   const showToast = useCallback((toast: ToastMessage) => {
     setToasts((prev) => {
@@ -89,6 +122,15 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // Helper to persist current tab session to localStorage
+  const persistTabs = useCallback((tabs: MarkdownFile[], activeId: string | null) => {
+    const key = workspaceKeyRef.current;
+    saveStoredTabs(key, {
+      openTabIds: tabs.map((t) => t.id),
+      activeTabId: activeId,
+    });
   }, []);
 
   // Helper to stream file previews asynchronously in non-blocking background batches
@@ -141,17 +183,19 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     []
   );
 
-  // Helper to load local vault files
+  // Helper to load local vault files and restore open tabs
   const loadLocalVaultFiles = useCallback(() => {
     const key = 'local_vault';
     const stored = getFromStorage<MarkdownFile[]>(`mandrak_recent_${key}`, []) || [];
     const legacy = stored.length > 0 ? stored : getFromStorage<MarkdownFile[]>(STORAGE_KEYS.RECENT_FILES, []) || [];
     const pinnedIds = getPinnedIds(key);
 
-    const normalized = (legacy || []).map((file) => ({
+    const normalized: MarkdownFile[] = (legacy || []).map((file) => ({
       ...file,
       provider: 'local' as const,
       isPinned: pinnedIds.includes(file.id),
+      savedContent: file.content || '',
+      isDirty: false,
       modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
       createdAt: file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt || Date.now()),
       preview: file.preview || (file.content ? stripMarkdown(file.content) : undefined),
@@ -160,14 +204,35 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     const hydrated = hydrateFilesWithCachedPreviews(key, normalized);
     setRecentFiles(hydrated);
     setCustomFolders(getStoredFolders(key));
+
+    // Restore saved open tabs for local vault
+    const tabSession = getStoredTabs(key);
+    if (tabSession.openTabIds.length > 0) {
+      const restoredTabs: MarkdownFile[] = [];
+      for (const tabId of tabSession.openTabIds) {
+        const found = hydrated.find((f) => f.id === tabId);
+        if (found) {
+          restoredTabs.push(found);
+        }
+      }
+      if (restoredTabs.length > 0) {
+        setOpenTabs(restoredTabs);
+        const validActive =
+          tabSession.activeTabId && restoredTabs.some((t) => t.id === tabSession.activeTabId)
+            ? tabSession.activeTabId
+            : restoredTabs[0].id;
+        setActiveTabId(validActive);
+      }
+    }
   }, []);
 
-  // Whenever workspace / storageProvider changes, completely switch isolated state & purge stale cache
+  // Whenever workspace / storageProvider changes, completely switch isolated state & restore tabs
   useEffect(() => {
-    setCurrentFile(null);
+    setOpenTabs([]);
+    setActiveTabId(null);
     setSearchQuery('');
     setError(null);
-    setRecentFiles([]); // Immediately clear so stale IDs from previous sessions never flash
+    setRecentFiles([]);
 
     const currentKey = getWorkspaceKey(storageProvider);
     setCustomFolders(getStoredFolders(currentKey));
@@ -185,11 +250,12 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         const files = await storageProvider.listFiles();
         if (cancelled) return;
         const pinnedIds = getPinnedIds(currentKey);
-        
+
         const mappedFiles: MarkdownFile[] = files.map((file) => ({
           id: file.id,
           name: file.name,
           content: file.content || '',
+          savedContent: file.content || '',
           path: file.path || file.name,
           provider: file.provider,
           modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
@@ -204,7 +270,37 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         const hydratedFiles = hydrateFilesWithCachedPreviews(currentKey, mappedFiles);
         setRecentFiles(hydratedFiles);
 
-        // 2. Identify files that still need background preview streaming
+        // 2. Restore open tabs for this cloud workspace
+        const tabSession = getStoredTabs(currentKey);
+        if (tabSession.openTabIds.length > 0) {
+          const tabFilesToOpen = hydratedFiles.filter((f) => tabSession.openTabIds.includes(f.id));
+          if (tabFilesToOpen.length > 0) {
+            // Read contents for open tabs
+            const loadedTabs: MarkdownFile[] = [];
+            for (const file of tabFilesToOpen) {
+              if (cancelled) return;
+              try {
+                const rawContent = await storageProvider.readFile(file.id);
+                const content = sanitizeFileContent(rawContent);
+                const preview = stripMarkdown(content);
+                loadedTabs.push({ ...file, content, savedContent: content, preview, isDirty: false });
+              } catch {
+                // If reading fails, still keep skeleton
+                loadedTabs.push({ ...file, isDirty: false });
+              }
+            }
+            if (!cancelled && loadedTabs.length > 0) {
+              setOpenTabs(loadedTabs);
+              const validActive =
+                tabSession.activeTabId && loadedTabs.some((t) => t.id === tabSession.activeTabId)
+                  ? tabSession.activeTabId
+                  : loadedTabs[0].id;
+              setActiveTabId(validActive);
+            }
+          }
+        }
+
+        // 3. Identify files that still need background preview streaming
         const needsStreaming = hydratedFiles.filter((f) => !f.preview && f.size > 0);
         if (needsStreaming.length > 0) {
           streamPreviewsInBackground(needsStreaming, storageProvider, currentKey, () => cancelled);
@@ -234,7 +330,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       modifiedAt: file.modifiedAt instanceof Date ? file.modifiedAt : new Date(file.modifiedAt || Date.now()),
       createdAt: file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt || Date.now()),
     };
-    
+
     setRecentFiles((prev) => {
       const updated = [safeFile, ...prev.filter((f) => f.id !== file.id)].slice(0, 30);
       if (key === 'local_vault') {
@@ -245,6 +341,66 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     });
   }, []);
 
+  const setActiveTab = useCallback((fileId: string) => {
+    setActiveTabId(fileId);
+    setOpenTabs((prev) => {
+      persistTabs(prev, fileId);
+      return prev;
+    });
+  }, [persistTabs]);
+
+  const closeTab = useCallback((fileId: string) => {
+    setOpenTabs((prev) => {
+      const index = prev.findIndex((t) => t.id === fileId);
+      if (index === -1) return prev;
+
+      const updated = prev.filter((t) => t.id !== fileId);
+      let nextActiveId = activeTabId;
+
+      if (activeTabId === fileId) {
+        if (updated.length > 0) {
+          const nextIndex = Math.min(index, updated.length - 1);
+          nextActiveId = updated[nextIndex].id;
+        } else {
+          nextActiveId = null;
+        }
+        setActiveTabId(nextActiveId);
+      }
+
+      persistTabs(updated, nextActiveId);
+      return updated;
+    });
+  }, [activeTabId, persistTabs]);
+
+  const closeOtherTabs = useCallback((fileId: string) => {
+    setOpenTabs((prev) => {
+      const target = prev.find((t) => t.id === fileId);
+      if (!target) return prev;
+      const updated = [target];
+      setActiveTabId(fileId);
+      persistTabs(updated, fileId);
+      return updated;
+    });
+  }, [persistTabs]);
+
+  const closeAllTabs = useCallback(() => {
+    setOpenTabs([]);
+    setActiveTabId(null);
+    persistTabs([], null);
+  }, [persistTabs]);
+
+  const reorderTabs = useCallback((startIndex: number, endIndex: number) => {
+    setOpenTabs((prev) => {
+      const updated = [...prev];
+      const [moved] = updated.splice(startIndex, 1);
+      if (moved) {
+        updated.splice(endIndex, 0, moved);
+        persistTabs(updated, activeTabId);
+      }
+      return updated;
+    });
+  }, [activeTabId, persistTabs]);
+
   const createDraft = useCallback((name: string, content: string, path?: string) => {
     const safeName = ensureMarkdownFileName(name);
     const cleanDir = path ? path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') : '';
@@ -254,6 +410,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       id: `draft_${Date.now()}`,
       name: safeName,
       content,
+      savedContent: content,
       preview,
       path: fullPath,
       provider: 'local',
@@ -265,15 +422,33 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     };
     const key = workspaceKeyRef.current;
     setCachedPreview(key, draftFile.id, preview, draftFile.modifiedAt.getTime(), draftFile.size);
-    setCurrentFile(draftFile);
+
+    setOpenTabs((prev) => {
+      const updated = [...prev.filter((t) => t.id !== draftFile.id), draftFile];
+      persistTabs(updated, draftFile.id);
+      return updated;
+    });
+    setActiveTabId(draftFile.id);
     saveToRecentFiles(draftFile);
-  }, [saveToRecentFiles]);
+  }, [saveToRecentFiles, persistTabs]);
 
   const openFile = useCallback(async (fileId: string) => {
+    // Check if already open in tabs
+    const alreadyOpen = openTabs.find((t) => t.id === fileId);
+    if (alreadyOpen) {
+      setActiveTab(fileId);
+      return;
+    }
+
     if (!storageProvider) {
       const existingDraft = recentFiles.find((f) => f.id === fileId);
       if (existingDraft) {
-        setCurrentFile(existingDraft);
+        setOpenTabs((prev) => {
+          const updated = [...prev, existingDraft];
+          persistTabs(updated, fileId);
+          return updated;
+        });
+        setActiveTabId(fileId);
         return;
       }
       setError('No storage provider selected');
@@ -295,6 +470,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         markdownFile = {
           ...existing,
           content,
+          savedContent: content,
           preview,
           isDirty: false,
           size: content.length,
@@ -309,6 +485,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
           id: fileData.id,
           name: fileData.name,
           content,
+          savedContent: content,
           preview,
           path: fileData.path,
           provider: fileData.provider,
@@ -322,14 +499,19 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       const modMs = markdownFile.modifiedAt instanceof Date ? markdownFile.modifiedAt.getTime() : new Date(markdownFile.modifiedAt || 0).getTime();
       setCachedPreview(key, markdownFile.id, preview, modMs, markdownFile.size);
 
-      setCurrentFile(markdownFile);
+      setOpenTabs((prev) => {
+        const updated = [...prev.filter((t) => t.id !== fileId), markdownFile];
+        persistTabs(updated, fileId);
+        return updated;
+      });
+      setActiveTabId(fileId);
       saveToRecentFiles(markdownFile);
     } catch (err) {
       setError(toUserError(err, 'Failed to open file'));
     } finally {
       setIsLoading(false);
     }
-  }, [storageProvider, recentFiles, saveToRecentFiles]);
+  }, [openTabs, storageProvider, recentFiles, setActiveTab, saveToRecentFiles, persistTabs]);
 
   const saveFile = useCallback(async () => {
     if (!currentFile) {
@@ -342,9 +524,19 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
     if (!storageProvider) {
       exportToMarkdownFile(currentFile.content, currentFile.name);
-      const updated = { ...currentFile, preview, isDirty: false, modifiedAt: new Date(), size: currentFile.content.length };
+      const updated = {
+        ...currentFile,
+        preview,
+        savedContent: currentFile.content,
+        isDirty: false,
+        modifiedAt: new Date(),
+        size: currentFile.content.length,
+      };
       setCachedPreview(key, updated.id, preview, updated.modifiedAt.getTime(), updated.size);
-      setCurrentFile(updated);
+
+      setOpenTabs((prev) =>
+        prev.map((t) => (t.id === currentFile.id ? updated : t))
+      );
       saveToRecentFiles(updated);
       showToast({
         id: `save-draft-${currentFile.id}-${Date.now()}`,
@@ -360,17 +552,20 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
     try {
       await storageProvider.writeFile(currentFile.id, currentFile.content);
-      
+
       const updatedFile = {
         ...currentFile,
         preview,
+        savedContent: currentFile.content,
         isDirty: false,
         modifiedAt: new Date(),
         size: currentFile.content.length,
       };
-      
+
       setCachedPreview(key, updatedFile.id, preview, updatedFile.modifiedAt.getTime(), updatedFile.size);
-      setCurrentFile(updatedFile);
+      setOpenTabs((prev) =>
+        prev.map((t) => (t.id === currentFile.id ? updatedFile : t))
+      );
       saveToRecentFiles(updatedFile);
       showToast({
         id: `save-${currentFile.id}-${Date.now()}`,
@@ -405,11 +600,12 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       const newFile = await storageProvider.createFile(name, content, path);
       const preview = stripMarkdown(content);
       const key = workspaceKeyRef.current;
-      
+
       const markdownFile: MarkdownFile = {
         id: newFile.id,
         name: newFile.name,
         content: newFile.content,
+        savedContent: newFile.content,
         preview,
         path: newFile.path || path || newFile.name,
         provider: newFile.provider,
@@ -423,14 +619,19 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       const modMs = markdownFile.modifiedAt instanceof Date ? markdownFile.modifiedAt.getTime() : new Date(markdownFile.modifiedAt || 0).getTime();
       setCachedPreview(key, markdownFile.id, preview, modMs, markdownFile.size);
 
-      setCurrentFile(markdownFile);
+      setOpenTabs((prev) => {
+        const updated = [...prev, markdownFile];
+        persistTabs(updated, markdownFile.id);
+        return updated;
+      });
+      setActiveTabId(markdownFile.id);
       saveToRecentFiles(markdownFile);
     } catch (err) {
       setError(toUserError(err, 'Failed to create file'));
     } finally {
       setIsLoading(false);
     }
-  }, [storageProvider, createDraft, saveToRecentFiles]);
+  }, [storageProvider, createDraft, saveToRecentFiles, persistTabs]);
 
   const duplicateFile = useCallback(async (fileId: string) => {
     const target = recentFiles.find((f) => f.id === fileId);
@@ -465,10 +666,10 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       }))
     );
 
-    if (currentFile?.id === fileId) {
-      setCurrentFile((prev) => (prev ? { ...prev, isPinned: updatedPinned.includes(fileId) } : null));
-    }
-  }, [currentFile]);
+    setOpenTabs((prev) =>
+      prev.map((t) => (t.id === fileId ? { ...t, isPinned: updatedPinned.includes(fileId) } : t))
+    );
+  }, []);
 
   const moveFile = useCallback(async (fileId: string, destinationFolderPath: string) => {
     const target = recentFiles.find((f) => f.id === fileId);
@@ -486,9 +687,9 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     setRecentFiles((prev) =>
       prev.map((f) => (f.id === fileId ? { ...f, path: newPath, isMoving: true } : f))
     );
-    if (currentFile?.id === fileId) {
-      setCurrentFile((prev) => (prev ? { ...prev, path: newPath, isMoving: true } : null));
-    }
+    setOpenTabs((prev) =>
+      prev.map((t) => (t.id === fileId ? { ...t, path: newPath, isMoving: true } : t))
+    );
 
     showToast({
       id: toastId,
@@ -512,9 +713,9 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         return updated;
       });
 
-      if (currentFile?.id === fileId) {
-        setCurrentFile((prev) => (prev ? { ...prev, path: newPath, isMoving: false } : null));
-      }
+      setOpenTabs((prev) =>
+        prev.map((t) => (t.id === fileId ? { ...t, path: newPath, isMoving: false } : t))
+      );
 
       showToast({
         id: toastId,
@@ -527,9 +728,9 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       setRecentFiles((prev) =>
         prev.map((f) => (f.id === fileId ? { ...f, path: previousPath, isMoving: false } : f))
       );
-      if (currentFile?.id === fileId) {
-        setCurrentFile((prev) => (prev ? { ...prev, path: previousPath, isMoving: false } : null));
-      }
+      setOpenTabs((prev) =>
+        prev.map((t) => (t.id === fileId ? { ...t, path: previousPath, isMoving: false } : t))
+      );
       showToast({
         id: toastId,
         type: 'error',
@@ -537,7 +738,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         duration: 4500,
       });
     }
-  }, [recentFiles, storageProvider, currentFile, showToast]);
+  }, [recentFiles, storageProvider, showToast]);
 
   const moveFolder = useCallback(async (sourceFolderPath: string, destinationFolderPath: string) => {
     const cleanSrc = sourceFolderPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
@@ -580,7 +781,19 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         return updated;
       });
 
-      // 2. Update customFolders
+      // 2. Update open tabs
+      setOpenTabs((prev) =>
+        prev.map((file) => {
+          const filePath = file.path.replace(/\\/g, '/');
+          if (filePath.startsWith(`${cleanSrc}/`)) {
+            const suffix = filePath.slice(cleanSrc.length);
+            return { ...file, path: `${newFolderPath}${suffix}` };
+          }
+          return file;
+        })
+      );
+
+      // 3. Update customFolders
       setCustomFolders((prev) => {
         const updated = prev
           .map((f) => {
@@ -599,11 +812,6 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         return updated;
       });
 
-      if (currentFile && currentFile.path.startsWith(`${cleanSrc}/`)) {
-        const suffix = currentFile.path.slice(cleanSrc.length);
-        setCurrentFile((prev) => (prev ? { ...prev, path: `${newFolderPath}${suffix}` } : null));
-      }
-
       showToast({
         id: toastId,
         type: 'success',
@@ -618,7 +826,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         duration: 4500,
       });
     }
-  }, [currentFile, showToast]);
+  }, [showToast]);
 
   const deleteFile = useCallback(async (fileId: string) => {
     setIsLoading(true);
@@ -629,12 +837,11 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       if (storageProvider) {
         await storageProvider.deleteFile(fileId);
       }
-      
+
       removeCachedPreview(key, fileId);
 
-      if (currentFile?.id === fileId) {
-        setCurrentFile(null);
-      }
+      // Close tab if open
+      closeTab(fileId);
 
       setRecentFiles((prev) => {
         const updated = prev.filter((f) => f.id !== fileId);
@@ -649,34 +856,81 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     } finally {
       setIsLoading(false);
     }
-  }, [storageProvider, currentFile]);
+  }, [storageProvider, closeTab]);
 
   const renameFile = useCallback(async (_fileId: string, _newName: string) => {
     setError('Rename functionality not yet implemented');
   }, []);
 
-  const closeFile = useCallback(() => {
-    setCurrentFile(null);
+  const closeFile = useCallback((fileId?: string) => {
+    const targetId = fileId || activeTabId;
+    if (targetId) {
+      closeTab(targetId);
+    } else {
+      closeAllTabs();
+    }
+  }, [activeTabId, closeTab, closeAllTabs]);
+
+  const syncSavedContent = useCallback((fileId: string, normalizedContent: string) => {
+    setOpenTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.id === fileId && !tab.isDirty) {
+          return { ...tab, savedContent: normalizedContent };
+        }
+        return tab;
+      })
+    );
+    setRecentFiles((prev) =>
+      prev.map((f) => {
+        if (f.id === fileId && !f.isDirty) {
+          return { ...f, savedContent: normalizedContent };
+        }
+        return f;
+      })
+    );
   }, []);
 
   const updateFileContent = useCallback((content: string) => {
-    if (currentFile) {
+    if (activeTabId) {
       const preview = stripMarkdown(content);
-      const updated: MarkdownFile = {
-        ...currentFile,
-        content,
-        preview,
-        isDirty: true,
-        size: content.length,
-      };
-      setCurrentFile(updated);
+
+      setOpenTabs((prev) =>
+        prev.map((tab) => {
+          if (tab.id !== activeTabId) return tab;
+          const baseSaved = tab.savedContent !== undefined ? tab.savedContent : tab.content;
+          const isDirty =
+            content !== baseSaved &&
+            normalizeMarkdown(content) !== normalizeMarkdown(baseSaved);
+          return {
+            ...tab,
+            content,
+            preview,
+            savedContent: baseSaved,
+            isDirty,
+            size: content.length,
+          };
+        })
+      );
+
       setRecentFiles((prev) =>
-        prev.map((f) =>
-          f.id === currentFile.id ? { ...f, preview, isDirty: true, size: content.length } : f
-        )
+        prev.map((f) => {
+          if (f.id !== activeTabId) return f;
+          const baseSaved = f.savedContent !== undefined ? f.savedContent : f.content;
+          const isDirty =
+            content !== baseSaved &&
+            normalizeMarkdown(content) !== normalizeMarkdown(baseSaved);
+          return {
+            ...f,
+            content,
+            preview,
+            savedContent: baseSaved,
+            isDirty,
+            size: content.length,
+          };
+        })
       );
     }
-  }, [currentFile]);
+  }, [activeTabId]);
 
   const filteredFiles = recentFiles.filter((file) => {
     const query = searchQuery.toLowerCase();
@@ -701,6 +955,8 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
 
   return {
     currentFile,
+    openTabs,
+    activeTabId,
     recentFiles: filteredFiles,
     customFolders,
     toasts,
@@ -722,5 +978,11 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     updateFileContent,
     createDraft,
     closeFile,
+    closeTab,
+    closeOtherTabs,
+    closeAllTabs,
+    setActiveTab,
+    reorderTabs,
+    syncSavedContent,
   };
 }

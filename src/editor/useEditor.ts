@@ -6,6 +6,7 @@ import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
 import { Markdown } from 'tiptap-markdown';
 import { sanitizeFileContent } from '../utils/htmlSanitizer';
+import { normalizeMarkdown } from '../utils/markdownParser';
 import { useEffect, useRef } from 'react';
 
 /**
@@ -108,10 +109,17 @@ function extractMarkdown(editor: unknown): string {
   return '';
 }
 
-export function useEditor(content: string, onUpdate: (content: string) => void, onSave?: () => void) {
+export function useEditor(
+  content: string,
+  onUpdate: (content: string) => void,
+  onSave?: () => void,
+  onInit?: (initialMarkdown: string) => void
+) {
   const isUpdatingFromExternal = useRef(false);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const onInitRef = useRef(onInit);
+  onInitRef.current = onInit;
 
   const editor = useTipTapEditor({
     extensions: [
@@ -166,6 +174,14 @@ export function useEditor(content: string, onUpdate: (content: string) => void, 
         class: 'tiptap-editor',
       },
     },
+    onCreate: ({ editor }) => {
+      try {
+        const initialMarkdown = extractMarkdown(editor);
+        if (initialMarkdown) {
+          onInitRef.current?.(initialMarkdown);
+        }
+      } catch {}
+    },
     onUpdate: ({ editor }) => {
       if (isUpdatingFromExternal.current) return;
       try {
@@ -183,7 +199,7 @@ export function useEditor(content: string, onUpdate: (content: string) => void, 
     if (!editor) return;
 
     const currentMarkdown = extractMarkdown(editor);
-    if (content !== currentMarkdown) {
+    if (normalizeMarkdown(content) !== normalizeMarkdown(currentMarkdown)) {
       isUpdatingFromExternal.current = true;
       try {
         const safeContent = sanitizeFileContent(content);
@@ -191,6 +207,10 @@ export function useEditor(content: string, onUpdate: (content: string) => void, 
           contentType: 'markdown',
           emitUpdate: false,
         });
+        const newMarkdown = extractMarkdown(editor);
+        if (newMarkdown) {
+          onInitRef.current?.(newMarkdown);
+        }
       } catch (error) {
         console.error('Error setting editor content:', error);
         (editor.commands as any).setContent(content || '', {

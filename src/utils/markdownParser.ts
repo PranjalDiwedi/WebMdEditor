@@ -5,6 +5,15 @@ export async function parseMarkdown(markdown: string): Promise<string> {
   return result as string;
 }
 
+export function normalizeMarkdown(text: string | undefined | null): string {
+  if (!text) return '';
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+$/gm, '')
+    .trim();
+}
+
 export function stripMarkdown(markdown: string): string {
   // Remove markdown syntax for preview text
   return markdown

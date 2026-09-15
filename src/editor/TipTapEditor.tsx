@@ -10,6 +10,7 @@ interface TipTapEditorProps {
   content: string;
   onContentChange: (content: string) => void;
   onSave?: () => void;
+  onInit?: (initialMarkdown: string) => void;
   isDirty?: boolean;
   isSaving?: boolean;
   viewMode?: ViewMode;
@@ -19,11 +20,12 @@ export function TipTapEditor({
   content,
   onContentChange,
   onSave,
+  onInit,
   isDirty = false,
   isSaving = false,
   viewMode = 'edit',
 }: TipTapEditorProps) {
-  const editor = useEditor(content, onContentChange, onSave);
+  const editor = useEditor(content, onContentChange, onSave, onInit);
 
   // Compute document statistics
   const stats = useMemo(() => {

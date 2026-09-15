@@ -30,7 +30,12 @@ This document defines the architecture and implementation roadmap for **Universa
 6. **Modal & Search Dismissal (`Escape`)**:
    - In Search input: Clears current search filter query or blurs the input.
    - In Modals / Menus: Closes the active modal, export menu, user profile menu, or mobile drawer.
-7. **Form Submission (`Enter`)**:
+7. **Workspace Tab Navigation**:
+   - **Close Tab (`⌘W` / `Ctrl+W`)**: Closes the active tab note; prompts confirmation if unsaved edits exist.
+   - **Cycle Open Tabs (`Ctrl+Tab` / `Ctrl+Shift+Tab`)**: Fast forward and backward cycling through all open document tabs.
+   - **Switch Tabs (`⌥⌘←` / `⌥⌘→` or `Ctrl+PageUp` / `Ctrl+PageDown`)**: Smoothly jump to previous or next open document.
+   - **Direct Tab Jump (`⌥⌘1..9` / `Ctrl+1..9`)**: Jump directly to tab index 1 through 9.
+8. **Form Submission (`Enter`)**:
    - Pressing `Enter` inside "Create Note" or "Create Folder" inputs immediately validates and submits the form without requiring mouse clicks.
 
 ---

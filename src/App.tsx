@@ -10,6 +10,7 @@ import { DriveFolderPicker } from './storage/DriveFolderPicker';
 import { FileBrowser } from './files/FileBrowser';
 import { useFileManagement } from './files/useFileManagement';
 import { TipTapEditor } from './editor/TipTapEditor';
+import { EditorTabs } from './editor/EditorTabs';
 import type { ViewMode } from './editor/TipTapEditor';
 import { MainLayout } from './layout/MainLayout';
 import { Modal } from './components/Modal';
@@ -78,6 +79,8 @@ function App() {
 
   const {
     currentFile,
+    openTabs,
+    activeTabId,
     recentFiles,
     customFolders,
     toasts,
@@ -97,8 +100,41 @@ function App() {
     deleteFile,
     updateFileContent,
     createDraft,
-    closeFile
+    closeTab,
+    closeOtherTabs,
+    closeAllTabs,
+    setActiveTab,
+    reorderTabs,
+    syncSavedContent,
   } = useFileManagement(storageProvider);
+
+  const [tabToCloseWithWarning, setTabToCloseWithWarning] = useState<MarkdownFile | null>(null);
+
+  const handleRequestCloseTab = useCallback((tabId: string) => {
+    const targetTab = openTabs.find((t) => t.id === tabId);
+    if (targetTab && targetTab.isDirty) {
+      setTabToCloseWithWarning(targetTab);
+    } else {
+      closeTab(tabId);
+    }
+  }, [openTabs, closeTab]);
+
+  const handleConfirmSaveAndClose = useCallback(async () => {
+    if (tabToCloseWithWarning) {
+      if (activeTabId === tabToCloseWithWarning.id) {
+        await saveFile();
+      }
+      closeTab(tabToCloseWithWarning.id);
+      setTabToCloseWithWarning(null);
+    }
+  }, [tabToCloseWithWarning, activeTabId, saveFile, closeTab]);
+
+  const handleConfirmDiscardAndClose = useCallback(() => {
+    if (tabToCloseWithWarning) {
+      closeTab(tabToCloseWithWarning.id);
+      setTabToCloseWithWarning(null);
+    }
+  }, [tabToCloseWithWarning, closeTab]);
 
   const [fileToMove, setFileToMove] = useState<MarkdownFile | null>(null);
 
@@ -162,10 +198,10 @@ function App() {
   }, [openFile]);
 
   const handleGoHome = useCallback(() => {
-    closeFile();
+    closeAllTabs();
     setStorageProvider(null);
     setMobileMenuOpen(false);
-  }, [closeFile]);
+  }, [closeAllTabs]);
 
   const handleProviderSelected = useCallback((provider: StorageProvider | null) => {
     setStorageProvider(provider);
@@ -318,28 +354,37 @@ function App() {
           return;
         }
 
-        // 2. Cycle View Mode: Mod+P
+        // 2. Close Active Tab: Mod+W
+        if (key === 'w') {
+          e.preventDefault();
+          if (currentFile) {
+            handleRequestCloseTab(currentFile.id);
+          }
+          return;
+        }
+
+        // 3. Cycle View Mode: Mod+P
         if (key === 'p') {
           e.preventDefault();
           setViewMode((prev) => (prev === 'edit' ? 'split' : prev === 'split' ? 'preview' : 'edit'));
           return;
         }
 
-        // 3. Create New Note: Mod+N
+        // 4. Create New Note: Mod+N
         if (key === 'n' && !e.shiftKey) {
           e.preventDefault();
           handleOpenCreateModal();
           return;
         }
 
-        // 4. Toggle Sidebar: Mod+\ (or Mod+B when not in editor/input)
+        // 5. Toggle Sidebar: Mod+\ (or Mod+B when not in editor/input)
         if (e.key === '\\' || (!isInsideEditor && !isInsideInput && key === 'b')) {
           e.preventDefault();
           toggleSidebar();
           return;
         }
 
-        // 5. Search Focus: Mod+K (when not inside editor)
+        // 6. Search Focus: Mod+K (when not inside editor)
         if (key === 'k') {
           if (!isInsideEditor) {
             e.preventDefault();
@@ -355,6 +400,53 @@ function App() {
             return;
           }
         }
+
+        // 7. Switch Tab via Mod+Alt+1..9
+        if (e.altKey && !isInsideEditor && !isInsideInput) {
+          const num = parseInt(key, 10);
+          if (!isNaN(num) && num >= 1 && num <= 9) {
+            const targetTab = openTabs[num - 1];
+            if (targetTab) {
+              e.preventDefault();
+              setActiveTab(targetTab.id);
+              return;
+            }
+          }
+        }
+      }
+
+      // 8. Cycle Tabs with Ctrl+Tab or Ctrl+Shift+Tab
+      if (e.key === 'Tab' && e.ctrlKey) {
+        e.preventDefault();
+        if (openTabs.length > 1) {
+          const currentIndex = openTabs.findIndex((t) => t.id === activeTabId);
+          if (currentIndex !== -1) {
+            const nextIndex = e.shiftKey
+              ? (currentIndex - 1 + openTabs.length) % openTabs.length
+              : (currentIndex + 1) % openTabs.length;
+            setActiveTab(openTabs[nextIndex].id);
+          }
+        }
+        return;
+      }
+
+      // 9. Switch Previous / Next Tab with Alt+Mod+ArrowLeft / ArrowRight or Ctrl+PageUp / PageDown
+      if (
+        (isMod && e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) ||
+        (e.ctrlKey && (e.key === 'PageUp' || e.key === 'PageDown'))
+      ) {
+        e.preventDefault();
+        if (openTabs.length > 1) {
+          const isPrev = e.key === 'ArrowLeft' || e.key === 'PageUp';
+          const currentIndex = openTabs.findIndex((t) => t.id === activeTabId);
+          if (currentIndex !== -1) {
+            const nextIndex = isPrev
+              ? (currentIndex - 1 + openTabs.length) % openTabs.length
+              : (currentIndex + 1) % openTabs.length;
+            setActiveTab(openTabs[nextIndex].id);
+          }
+        }
+        return;
       }
 
       // 6. Escape Key Handler
@@ -384,6 +476,10 @@ function App() {
     },
     [
       currentFile,
+      openTabs,
+      activeTabId,
+      setActiveTab,
+      handleRequestCloseTab,
       handleSaveFile,
       handleOpenCreateModal,
       toggleSidebar,
@@ -634,8 +730,22 @@ function App() {
               </div>
             )}
 
-            {/* Landing Hero Screen when no storage is connected and no note is open */}
-            {!storageProvider && !currentFile && (
+            {/* Multi-Tab Workspace Strip */}
+            {openTabs.length > 0 && (
+              <EditorTabs
+                tabs={openTabs}
+                activeTabId={activeTabId}
+                onSelectTab={setActiveTab}
+                onCloseTab={handleRequestCloseTab}
+                onCloseOtherTabs={closeOtherTabs}
+                onCloseAllTabs={closeAllTabs}
+                onNewTab={() => handleOpenCreateModal()}
+                onReorderTabs={reorderTabs}
+              />
+            )}
+
+            {/* Landing Hero Screen when no storage is connected and no note/tabs are open */}
+            {!storageProvider && openTabs.length === 0 && (
               <ProviderSelector
                 onProviderSelected={handleProviderSelected}
                 onDriveAuthenticated={handleDriveAuthenticated}
@@ -645,8 +755,8 @@ function App() {
               />
             )}
 
-            {/* Empty State when storage is connected but no note is selected */}
-            {storageProvider && !currentFile && (
+            {/* Empty State when storage is connected but no tabs are open */}
+            {storageProvider && openTabs.length === 0 && (
               <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
                 <div className="empty-state-icon">📝</div>
                 <h2>No Note Selected</h2>
@@ -690,47 +800,15 @@ function App() {
               </div>
             )}
 
-            {/* Active Editor Canvas with 3 View Modes */}
+            {/* Active Editor Canvas */}
             {currentFile && (
               <div className="editor-container">
-                <div className="editor-topbar">
-                  <div className="doc-title-group">
-                    <button
-                      type="button"
-                      className="icon-btn icon-btn-sm"
-                      onClick={closeFile}
-                      title="Close note (Go back)"
-                      aria-label="Close note"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="15" height="15">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <svg className="doc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <span className="doc-title">{currentFile.name}</span>
-                    {currentFile.isDirty && (
-                      <span className="doc-unsaved-badge">Unsaved</span>
-                    )}
-                    <button
-                      type="button"
-                      className="icon-btn icon-btn-sm danger-hover"
-                      onClick={() => setFileToDelete({ id: currentFile.id, name: currentFile.name })}
-                      title={`Delete "${currentFile.name}"`}
-                      aria-label="Delete note"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
                 <TipTapEditor
+                  key={currentFile.id}
                   content={currentFile.content}
                   onContentChange={updateFileContent}
                   onSave={handleSaveFile}
+                  onInit={(initialMd) => syncSavedContent(currentFile.id, initialMd)}
                   isDirty={currentFile.isDirty}
                   isSaving={fileLoading}
                   viewMode={viewMode}
@@ -1012,6 +1090,42 @@ function App() {
               </div>
             </div>
           )}
+        </Modal>
+
+        {/* Unsaved Changes Tab Close Warning Modal */}
+        <Modal
+          isOpen={!!tabToCloseWithWarning}
+          onClose={() => setTabToCloseWithWarning(null)}
+          title="Unsaved Changes"
+        >
+          <div className="unsaved-modal-content">
+            <p style={{ color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+              Do you want to save the changes you made to <strong>{tabToCloseWithWarning?.name}</strong> before closing?
+            </p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '0.35rem' }}>
+              Your changes will be lost if you don't save them.
+            </p>
+            <div className="modal-actions" style={{ marginTop: '1.25rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                onClick={() => setTabToCloseWithWarning(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleConfirmDiscardAndClose}
+              >
+                Don't Save
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleConfirmSaveAndClose}
+              >
+                Save & Close
+              </Button>
+            </div>
+          </div>
         </Modal>
 
         <SettingsModal

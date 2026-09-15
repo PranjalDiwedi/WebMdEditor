@@ -34,6 +34,15 @@ export function SettingsModal({ isOpen, onClose, theme, onThemeChange }: Setting
       ],
     },
     {
+      groupName: 'Workspace Tabs',
+      items: [
+        { key: `${modSymbol}W`, desc: 'Close active tab' },
+        { key: `Ctrl+Tab / Ctrl+⇧Tab`, desc: 'Cycle open tabs' },
+        { key: `${modSymbol}${altSymbol}← / →`, desc: 'Previous / Next tab' },
+        { key: `${modSymbol}${altSymbol}1..9`, desc: 'Jump to tab 1-9' },
+      ],
+    },
+    {
       groupName: 'Markdown Editor Formatting',
       items: [
         { key: `${modSymbol}B`, desc: 'Bold text' },
@@ -73,7 +82,7 @@ export function SettingsModal({ isOpen, onClose, theme, onThemeChange }: Setting
               className={`theme-option ${theme === 'dark' ? 'active' : ''}`}
               onClick={() => onThemeChange('dark')}
             >
-              <span>🌙</span> Dark Mode (Obsidian)
+              <span>🌙</span> Dark Mode
             </button>
           </div>
         </div>
