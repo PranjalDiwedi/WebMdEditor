@@ -1,15 +1,20 @@
 import { useState } from 'react';
 import { StorageProvider } from './StorageProvider';
 import { GoogleDriveProvider } from './GoogleDriveProvider';
+import { GitHubProvider } from './GitHubProvider';
 import { DropboxProvider } from './DropboxProvider';
 import { OneDriveProvider } from './OneDriveProvider';
 import { LocalProvider } from './LocalProvider';
 import { MandrakLogo } from '../components/MandrakLogo';
 import { GoogleDriveIcon } from '../components/GoogleDriveIcon';
+import { GitHubIcon } from '../components/GitHubIcon';
+import { OAUTH_CONFIGS } from '../config/constants';
 
 interface ProviderSelectorProps {
   onProviderSelected: (provider: StorageProvider | null) => void;
   onDriveAuthenticated?: (provider: GoogleDriveProvider) => void;
+  onGitHubAuthenticated?: (provider: GitHubProvider) => void;
+  onRequestGitHub?: () => void;
   onSelectTemplate?: (templateName: string, templateContent: string) => void;
   currentProvider: StorageProvider | null;
   /** Full picker for the main area; compact status for the header */
@@ -105,6 +110,8 @@ Start typing your thoughts in markdown...
 export function ProviderSelector({
   onProviderSelected,
   onDriveAuthenticated,
+  onGitHubAuthenticated,
+  onRequestGitHub,
   onSelectTemplate,
   currentProvider,
   variant = 'full',
@@ -130,6 +137,23 @@ export function ProviderSelector({
             onProviderSelected(driveProvider);
           }
           return;
+        }
+        case 'github': {
+          const githubProvider = new GitHubProvider();
+          if (OAUTH_CONFIGS.github.clientId) {
+            await githubProvider.authenticate();
+            if (onGitHubAuthenticated) {
+              onGitHubAuthenticated(githubProvider);
+            } else {
+              onProviderSelected(githubProvider);
+            }
+            return;
+          } else {
+            if (onRequestGitHub) {
+              onRequestGitHub();
+            }
+            return;
+          }
         }
         case 'dropbox':
           provider = new DropboxProvider();
@@ -165,6 +189,8 @@ export function ProviderSelector({
       <div className="storage-pill-compact">
         {currentProvider.type === 'google-drive' ? (
           <GoogleDriveIcon size={14} />
+        ) : currentProvider.type === 'github' ? (
+          <GitHubIcon size={14} />
         ) : (
           <span className="status-dot" />
         )}
@@ -200,7 +226,7 @@ export function ProviderSelector({
         </h1>
 
         <p className="landing-subtitle">
-          A distraction-free, lightning-fast editor with native local file access and seamless Google Drive sync. No account required.
+          A distraction-free, lightning-fast editor with native local file access, Google Drive sync, and GitHub versioning. No account required.
         </p>
 
         {error && <div className="error-message">{error}</div>}
@@ -244,6 +270,23 @@ export function ProviderSelector({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
               {connectingProvider === 'google-drive' ? 'Connecting...' : 'Connect Google Drive'}
+            </button>
+          </div>
+
+          <div
+            className="landing-provider-card"
+            onClick={() => !connectingProvider && (onRequestGitHub ? onRequestGitHub() : null)}
+          >
+            <div className="provider-card-icon-wrapper" style={{ background: 'rgba(255, 255, 255, 0.1)' }}>
+              <GitHubIcon size={26} />
+            </div>
+            <div className="provider-card-content">
+              <h3>GitHub Sync</h3>
+              <p>Sync notes with any repository with git commit history and zero-server privacy.</p>
+            </div>
+            <button type="button" className="provider-card-btn" disabled={connectingProvider !== null}>
+              <GitHubIcon size={16} />
+              Connect GitHub
             </button>
           </div>
         </div>

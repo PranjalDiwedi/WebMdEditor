@@ -22,6 +22,12 @@ export const OAUTH_CONFIGS = {
     clientId: import.meta.env.VITE_ONEDRIVE_CLIENT_ID || '',
     redirectUri: `${window.location.origin}/auth/callback/onedrive`,
     scopes: ['Files.Read', 'Files.ReadWrite']
+  },
+  github: {
+    clientId: import.meta.env.VITE_GITHUB_CLIENT_ID || '',
+    gatekeeperUrl: import.meta.env.VITE_GITHUB_GATEKEEPER_URL || '',
+    redirectUri: `${window.location.origin}/auth/callback/github`,
+    scopes: ['repo']
   }
 };
 

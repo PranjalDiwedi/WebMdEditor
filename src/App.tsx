@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { MarkdownFile } from './types/file';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SignOut } from './auth/SignOut';
@@ -6,7 +6,12 @@ import { useAuth } from './auth/useAuth';
 import { ProviderSelector } from './storage/ProviderSelector';
 import { StorageProvider } from './storage/StorageProvider';
 import { GoogleDriveProvider } from './storage/GoogleDriveProvider';
+import { GitHubProvider } from './storage/GitHubProvider';
+import type { GitHubRepositoryItem } from './storage/GitHubProvider';
 import { DriveFolderPicker } from './storage/DriveFolderPicker';
+import { GitHubConnectModal } from './storage/GitHubConnectModal';
+import { GitHubRepoPicker } from './storage/GitHubRepoPicker';
+import { CommitModal } from './components/CommitModal';
 import { FileBrowser } from './files/FileBrowser';
 import { useFileManagement } from './files/useFileManagement';
 import { TipTapEditor } from './editor/TipTapEditor';
@@ -71,6 +76,10 @@ function App() {
     return (localStorage.getItem('webmd_theme') as 'light' | 'dark') || 'dark';
   });
 
+  const [showGitHubModal, setShowGitHubModal] = useState(false);
+  const [pendingGitHubProvider, setPendingGitHubProvider] = useState<GitHubProvider | null>(null);
+  const [showGitHubRepoPicker, setShowGitHubRepoPicker] = useState(false);
+  const [showCommitModal, setShowCommitModal] = useState(false);
   const [createFolderPath, setCreateFolderPath] = useState<string | undefined>(undefined);
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -172,6 +181,27 @@ function App() {
   // Preload Google Identity Services and Google Drive API for smooth popups across Firefox & Chrome
   useEffect(() => {
     preloadGoogleScripts(OAUTH_CONFIGS.google.apiKey || undefined);
+  }, []);
+
+  // Handle OAuth popup window callbacks (e.g. GitHub / Dropbox / OneDrive)
+  const hasPostedOAuthCallbackRef = useRef(false);
+  useEffect(() => {
+    if (window.opener && window.location.pathname.includes('/auth/callback')) {
+      if (hasPostedOAuthCallbackRef.current) return;
+      hasPostedOAuthCallbackRef.current = true;
+
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const token = params.get('token') || params.get('access_token');
+      const error = params.get('error_description') || params.get('error');
+      try {
+        window.opener.postMessage(
+          { type: 'GITHUB_OAUTH_CALLBACK', code, token, error },
+          window.location.origin
+        );
+      } catch {}
+      window.close();
+    }
   }, []);
 
   // Handle theme changes
@@ -310,8 +340,50 @@ function App() {
     }
   }, [storageProvider, createFile, createDraft]);
 
+  const handleGitHubAuthenticated = useCallback((provider: GitHubProvider) => {
+    setPendingGitHubProvider(provider);
+    setShowGitHubModal(false);
+    setShowGitHubRepoPicker(true);
+  }, []);
+
+  const handleGitHubRepoSelected = useCallback(
+    (repo: GitHubRepositoryItem, branch: string) => {
+      if (!pendingGitHubProvider) return;
+      pendingGitHubProvider.selectRepository(repo, branch);
+      setStorageProvider(pendingGitHubProvider);
+      setPendingGitHubProvider(null);
+      setShowGitHubRepoPicker(false);
+      if (window.innerWidth <= 768) {
+        setMobileMenuOpen(true);
+      }
+    },
+    [pendingGitHubProvider]
+  );
+
+  const handleGitHubBackToAuth = useCallback(() => {
+    setShowGitHubRepoPicker(false);
+    setShowGitHubModal(true);
+  }, []);
+
+  const handleGitHubCancel = useCallback(() => {
+    pendingGitHubProvider?.disconnect();
+    setPendingGitHubProvider(null);
+    setShowGitHubRepoPicker(false);
+  }, [pendingGitHubProvider]);
+
   const handleSaveFile = useCallback(async () => {
-    await saveFile();
+    if (storageProvider?.type === 'github') {
+      if (currentFile) {
+        setShowCommitModal(true);
+      }
+    } else {
+      await saveFile();
+    }
+  }, [storageProvider, currentFile, saveFile]);
+
+  const handleConfirmCommit = useCallback(async (commitMessage: string) => {
+    await saveFile(commitMessage);
+    setShowCommitModal(false);
   }, [saveFile]);
 
   const handleExportMarkdown = useCallback(() => {
@@ -749,6 +821,7 @@ function App() {
               <ProviderSelector
                 onProviderSelected={handleProviderSelected}
                 onDriveAuthenticated={handleDriveAuthenticated}
+                onRequestGitHub={() => setShowGitHubModal(true)}
                 onSelectTemplate={handleCreateFromTemplateDirect}
                 currentProvider={null}
                 variant="full"
@@ -1127,6 +1200,45 @@ function App() {
             </div>
           </div>
         </Modal>
+
+        {/* GitHub Connect Modal */}
+        <GitHubConnectModal
+          isOpen={showGitHubModal}
+          onAuthenticated={handleGitHubAuthenticated}
+          onCancel={() => setShowGitHubModal(false)}
+        />
+
+        {/* GitHub Visual Repository Picker Modal */}
+        {pendingGitHubProvider && (
+          <GitHubRepoPicker
+            provider={pendingGitHubProvider}
+            isOpen={showGitHubRepoPicker}
+            onSelect={handleGitHubRepoSelected}
+            onCancel={handleGitHubCancel}
+            onBackToAuth={handleGitHubBackToAuth}
+          />
+        )}
+
+        {/* GitHub Commit Modal */}
+        {storageProvider?.type === 'github' && currentFile && (
+          <CommitModal
+            isOpen={showCommitModal}
+            fileName={currentFile.name}
+            filePath={currentFile.path}
+            repoName={
+              (storageProvider as GitHubProvider).getRepoInfo
+                ? `${(storageProvider as GitHubProvider).getRepoInfo().owner}/${(storageProvider as GitHubProvider).getRepoInfo().repo}`
+                : storageProvider.name
+            }
+            branchName={
+              (storageProvider as GitHubProvider).getRepoInfo
+                ? (storageProvider as GitHubProvider).getRepoInfo().branch
+                : 'main'
+            }
+            onConfirm={handleConfirmCommit}
+            onCancel={() => setShowCommitModal(false)}
+          />
+        )}
 
         <SettingsModal
           isOpen={showSettings}

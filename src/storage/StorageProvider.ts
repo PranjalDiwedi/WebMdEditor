@@ -2,15 +2,15 @@ import type { StorageProvider as IStorageProvider, StorageFile } from '../types/
 
 export abstract class StorageProvider implements IStorageProvider {
   abstract name: string;
-  abstract type: 'google-drive' | 'dropbox' | 'onedrive' | 'local';
+  abstract type: 'google-drive' | 'dropbox' | 'onedrive' | 'local' | 'github';
   isAuthenticated: boolean = false;
 
-  abstract authenticate(): Promise<void>;
+  abstract authenticate(config?: unknown): Promise<void>;
   abstract listFiles(): Promise<StorageFile[]>;
   abstract readFile(fileId: string): Promise<string>;
-  abstract writeFile(fileId: string, content: string): Promise<void>;
-  abstract createFile(name: string, content: string, path?: string): Promise<StorageFile>;
-  abstract deleteFile(fileId: string): Promise<void>;
+  abstract writeFile(fileId: string, content: string, commitMessage?: string): Promise<void>;
+  abstract createFile(name: string, content: string, path?: string, commitMessage?: string): Promise<StorageFile>;
+  abstract deleteFile(fileId: string, commitMessage?: string): Promise<void>;
   moveFile?(fileId: string, newPath: string, parentFolderId?: string): Promise<void>;
   abstract disconnect(): Promise<void>;
 

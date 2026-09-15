@@ -20,6 +20,13 @@ function getWorkspaceKey(storageProvider: StorageProvider | null): string {
   if (!storageProvider || !storageProvider.isAuthenticated) {
     return 'local_vault';
   }
+  if (storageProvider.type === 'github') {
+    const repoInfo = (storageProvider as any).getRepoInfo?.();
+    if (repoInfo?.owner && repoInfo?.repo) {
+      return `github_${repoInfo.owner}_${repoInfo.repo}_${repoInfo.branch || 'main'}`;
+    }
+    return `github_${storageProvider.name}`;
+  }
   const target = (storageProvider as any).getTargetFolder?.();
   const folderPart = target?.id ? `_${target.id}` : '';
   return `${storageProvider.type}${folderPart}`;
@@ -80,7 +87,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
   setSearchQuery: (query: string) => void;
   updateFileContent: (content: string) => void;
   createDraft: (name: string, content: string, path?: string) => void;
-  createFile: (name: string, content: string, path?: string) => Promise<void>;
+  createFile: (name: string, content: string, path?: string, commitMessage?: string) => Promise<void>;
   createFolder: (folderPath: string) => void;
   duplicateFile: (fileId: string) => Promise<void>;
   togglePinFile: (fileId: string) => void;
@@ -513,7 +520,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     }
   }, [openTabs, storageProvider, recentFiles, setActiveTab, saveToRecentFiles, persistTabs]);
 
-  const saveFile = useCallback(async () => {
+  const saveFile = useCallback(async (commitMessage?: string) => {
     if (!currentFile) {
       setError('No file to save');
       return;
@@ -551,7 +558,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     setError(null);
 
     try {
-      await storageProvider.writeFile(currentFile.id, currentFile.content);
+      await storageProvider.writeFile(currentFile.id, currentFile.content, commitMessage);
 
       const updatedFile = {
         ...currentFile,
@@ -567,11 +574,14 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
         prev.map((t) => (t.id === currentFile.id ? updatedFile : t))
       );
       saveToRecentFiles(updatedFile);
+      const successMessage = storageProvider.type === 'github'
+        ? `Committed "${currentFile.name}" to GitHub`
+        : `Saved "${currentFile.name}"`;
       showToast({
         id: `save-${currentFile.id}-${Date.now()}`,
         type: 'success',
-        message: `Saved "${currentFile.name}"`,
-        duration: 2200,
+        message: successMessage,
+        duration: 2500,
       });
     } catch (err) {
       const errMsg = toUserError(err, 'Failed to save file');
@@ -587,7 +597,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     }
   }, [currentFile, storageProvider, saveToRecentFiles, showToast]);
 
-  const createFile = useCallback(async (name: string, content: string, path?: string) => {
+  const createFile = useCallback(async (name: string, content: string, path?: string, commitMessage?: string) => {
     if (!storageProvider) {
       createDraft(name, content, path);
       return;
@@ -597,7 +607,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     setError(null);
 
     try {
-      const newFile = await storageProvider.createFile(name, content, path);
+      const newFile = await storageProvider.createFile(name, content, path, commitMessage);
       const preview = stripMarkdown(content);
       const key = workspaceKeyRef.current;
 
@@ -828,14 +838,14 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     }
   }, [showToast]);
 
-  const deleteFile = useCallback(async (fileId: string) => {
+  const deleteFile = useCallback(async (fileId: string, commitMessage?: string) => {
     setIsLoading(true);
     setError(null);
     const key = workspaceKeyRef.current;
 
     try {
       if (storageProvider) {
-        await storageProvider.deleteFile(fileId);
+        await storageProvider.deleteFile(fileId, commitMessage);
       }
 
       removeCachedPreview(key, fileId);

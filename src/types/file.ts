@@ -3,7 +3,7 @@ export interface MarkdownFile {
   name: string;
   content: string;
   path: string;
-  provider: 'google-drive' | 'dropbox' | 'onedrive' | 'local';
+  provider: 'google-drive' | 'dropbox' | 'onedrive' | 'local' | 'github';
   modifiedAt: Date;
   createdAt: Date;
   size: number;
@@ -26,9 +26,9 @@ export interface FileState {
 
 export interface FileOperations {
   openFile(fileId: string): Promise<void>;
-  saveFile(): Promise<void>;
-  createFile(name: string, content: string): Promise<void>;
-  deleteFile(fileId: string): Promise<void>;
+  saveFile(commitMessage?: string): Promise<void>;
+  createFile(name: string, content: string, path?: string, commitMessage?: string): Promise<void>;
+  deleteFile(fileId: string, commitMessage?: string): Promise<void>;
   renameFile(fileId: string, newName: string): Promise<void>;
   closeTab(fileId: string): void;
   closeOtherTabs(fileId: string): void;
