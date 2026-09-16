@@ -68,27 +68,38 @@ export function GitHubConnectModal({
           try {
             setIsLoading(true);
             const gatekeeper = OAUTH_CONFIGS.github.gatekeeperUrl;
+            const redirectUri = OAUTH_CONFIGS.github.redirectUri;
             const exchangeUrl = gatekeeper
               ? `${gatekeeper}/${code}`
-              : `/api/github/oauth/exchange?code=${encodeURIComponent(code)}`;
+              : `/api/github/oauth/exchange?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
             const res = await fetch(exchangeUrl);
-            if (!res.ok) {
-              const text = await res.text();
-              let errorMsg = `HTTP ${res.status}: Failed to exchange authorization code.`;
+            const contentType = res.headers.get('content-type') || '';
+            const rawText = await res.text();
+
+            let data: { token?: string; error?: string; scope?: string } = {};
+            if (contentType.includes('application/json') || rawText.trim().startsWith('{')) {
               try {
-                const parsed = JSON.parse(text);
-                errorMsg = parsed.error || errorMsg;
+                data = JSON.parse(rawText);
               } catch {
-                if (text.includes('<!doctype') || text.includes('<html')) {
+                data = {};
+              }
+            }
+
+            if (!res.ok) {
+              let errorMsg = data.error || `HTTP ${res.status}: Failed to exchange authorization code.`;
+              if (rawText.includes('<!doctype') || rawText.includes('<html') || rawText.includes('<head>')) {
+                if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
                   errorMsg =
-                    'Dev server OAuth proxy not initialized. Please restart your dev server (npm run dev) so Vite loads the new configuration.';
+                    'Dev server OAuth proxy not initialized. Please restart your dev server (npm run dev) so Vite loads the updated proxy configuration.';
+                } else {
+                  errorMsg =
+                    'Netlify OAuth Function route was not found or returned the SPA page. Please ensure netlify.toml is deployed and VITE_GITHUB_CLIENT_SECRET is set in Netlify Environment Variables.';
                 }
               }
               throw new Error(errorMsg);
             }
 
-            const data = await res.json();
             if (data.error) {
               throw new Error(data.error);
             }
@@ -97,6 +108,17 @@ export function GitHubConnectModal({
               provider.setToken(data.token);
               onAuthenticated(provider);
               return;
+            }
+            if (rawText.includes('<!doctype') || rawText.includes('<html')) {
+              if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                throw new Error(
+                  'Dev server OAuth proxy not initialized. Please restart your dev server (npm run dev) so Vite loads the updated proxy configuration.'
+                );
+              } else {
+                throw new Error(
+                  'OAuth exchange endpoint returned HTML instead of token. Please verify Netlify functions deployment.'
+                );
+              }
             }
             throw new Error('No access token returned from OAuth authorization server.');
           } catch (err) {
@@ -119,7 +141,7 @@ export function GitHubConnectModal({
     const clientId = OAUTH_CONFIGS.github.clientId;
     if (!clientId) {
       setError(
-        'GitHub OAuth Client ID is not configured. Please paste a Personal Access Token, or add VITE_GITHUB_CLIENT_ID to your .env file.'
+        'GitHub OAuth Client ID is not configured. Please paste a Personal Access Token below, or set VITE_GITHUB_CLIENT_ID in your environment variables.'
       );
       return;
     }

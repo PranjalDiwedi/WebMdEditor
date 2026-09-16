@@ -49,6 +49,16 @@ export default defineConfig(({ mode }) => {
                   return;
                 }
 
+                const redirectUri = searchParams.get('redirect_uri');
+                const payload: Record<string, string> = {
+                  client_id: clientId,
+                  client_secret: clientSecret,
+                  code: code,
+                };
+                if (redirectUri) {
+                  payload.redirect_uri = redirectUri;
+                }
+
                 // Exchange authorization code for access token via GitHub API
                 const githubRes = await fetch('https://github.com/login/oauth/access_token', {
                   method: 'POST',
@@ -57,11 +67,7 @@ export default defineConfig(({ mode }) => {
                     Accept: 'application/json',
                     'User-Agent': 'Mandrak-App',
                   },
-                  body: JSON.stringify({
-                    client_id: clientId,
-                    client_secret: clientSecret,
-                    code: code,
-                  }),
+                  body: JSON.stringify(payload),
                 });
 
                 const data = (await githubRes.json()) as {

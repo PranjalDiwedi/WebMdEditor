@@ -100,9 +100,31 @@ export class GitHubProvider extends StorageProvider {
   private getHeaders(tokenOverride?: string): Record<string, string> {
     const t = tokenOverride || this.token;
     return {
-      Accept: 'application/vnd.github.v3+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      Accept: 'application/json',
       Authorization: `Bearer ${t}`,
     };
+  }
+
+  /**
+   * Internal request helper that tries proxy first, then falls back to direct API.
+   */
+  private async requestGitHub(path: string, options: RequestInit = {}): Promise<Response> {
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
+    // 1. Try local or Netlify proxy (/api/github/rest)
+    try {
+      const proxyRes = await fetch(`/api/github/rest${cleanPath}`, options);
+      const ct = proxyRes.headers.get('content-type') || '';
+      if (proxyRes.status !== 404 && !ct.includes('text/html')) {
+        return proxyRes;
+      }
+    } catch {
+      // Fallback
+    }
+
+    // 2. Fallback to direct https://api.github.com
+    return fetch(`https://api.github.com${cleanPath}`, options);
   }
 
   /**
@@ -114,8 +136,8 @@ export class GitHubProvider extends StorageProvider {
       throw new Error('Authentication token is required to list repositories.');
     }
 
-    const res = await fetch(
-      getGitHubApiUrl('/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member'),
+    const res = await this.requestGitHub(
+      '/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member',
       { headers: this.getHeaders(t) }
     );
 
@@ -144,10 +166,9 @@ export class GitHubProvider extends StorageProvider {
     }
 
     try {
-      const res = await fetch(
-        getGitHubApiUrl(`/repos/${o}/${r}/branches?per_page=100`),
-        { headers: this.getHeaders(t) }
-      );
+      const res = await this.requestGitHub(`/repos/${o}/${r}/branches?per_page=100`, {
+        headers: this.getHeaders(t),
+      });
 
       if (!res.ok) {
         return ['main'];
@@ -201,11 +222,8 @@ export class GitHubProvider extends StorageProvider {
       const cleanRepo = repo.trim();
 
       // 1. Verify Repository access
-      const repoRes = await fetch(getGitHubApiUrl(`/repos/${cleanOwner}/${cleanRepo}`), {
-        headers: {
-          Accept: 'application/vnd.github.v3+json',
-          Authorization: `Bearer ${cleanToken}`,
-        },
+      const repoRes = await this.requestGitHub(`/repos/${cleanOwner}/${cleanRepo}`, {
+        headers: this.getHeaders(cleanToken),
       });
 
       if (repoRes.status === 401) {
@@ -223,13 +241,10 @@ export class GitHubProvider extends StorageProvider {
       const targetBranch = (branch?.trim() || repoData.default_branch || 'main').trim();
 
       // 2. Verify target branch
-      const branchRes = await fetch(
-        getGitHubApiUrl(`/repos/${cleanOwner}/${cleanRepo}/branches/${encodeURIComponent(targetBranch)}`),
+      const branchRes = await this.requestGitHub(
+        `/repos/${cleanOwner}/${cleanRepo}/branches/${encodeURIComponent(targetBranch)}`,
         {
-          headers: {
-            Accept: 'application/vnd.github.v3+json',
-            Authorization: `Bearer ${cleanToken}`,
-          },
+          headers: this.getHeaders(cleanToken),
         }
       );
 
@@ -295,7 +310,7 @@ export class GitHubProvider extends StorageProvider {
               const gatekeeper = OAUTH_CONFIGS.github.gatekeeperUrl;
               const exchangeUrl = gatekeeper
                 ? `${gatekeeper}/${code}`
-                : `/api/github/oauth/exchange?code=${encodeURIComponent(code)}`;
+                : `/api/github/oauth/exchange?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
               const res = await fetch(exchangeUrl);
               const data = await res.json();
@@ -327,8 +342,8 @@ export class GitHubProvider extends StorageProvider {
 
     try {
       // Single API call to Git Trees endpoint to list entire repository tree recursively
-      const res = await fetch(
-        getGitHubApiUrl(`/repos/${this.owner}/${this.repo}/git/trees/${encodeURIComponent(this.branch)}?recursive=1`),
+      const res = await this.requestGitHub(
+        `/repos/${this.owner}/${this.repo}/git/trees/${encodeURIComponent(this.branch)}?recursive=1`,
         { headers: this.getHeaders() }
       );
 
@@ -378,8 +393,8 @@ export class GitHubProvider extends StorageProvider {
     const clean = cleanFilePath(fileId);
 
     try {
-      const res = await fetch(
-        getGitHubApiUrl(`/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(clean)}?ref=${encodeURIComponent(this.branch)}`),
+      const res = await this.requestGitHub(
+        `/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(clean)}?ref=${encodeURIComponent(this.branch)}`,
         { headers: this.getHeaders() }
       );
 
@@ -405,8 +420,8 @@ export class GitHubProvider extends StorageProvider {
 
   private async fetchCurrentSha(cleanPath: string): Promise<string | undefined> {
     try {
-      const res = await fetch(
-        getGitHubApiUrl(`/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(cleanPath)}?ref=${encodeURIComponent(this.branch)}`),
+      const res = await this.requestGitHub(
+        `/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(cleanPath)}?ref=${encodeURIComponent(this.branch)}`,
         { headers: this.getHeaders() }
       );
       if (res.ok) {
@@ -445,8 +460,8 @@ export class GitHubProvider extends StorageProvider {
       body.sha = sha;
     }
 
-    const res = await fetch(
-      getGitHubApiUrl(`/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(clean)}`),
+    const res = await this.requestGitHub(
+      `/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(clean)}`,
       {
         method: 'PUT',
         headers: this.getHeaders(),
@@ -498,8 +513,8 @@ export class GitHubProvider extends StorageProvider {
       branch: this.branch,
     };
 
-    const res = await fetch(
-      getGitHubApiUrl(`/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(cleanPath)}`),
+    const res = await this.requestGitHub(
+      `/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(cleanPath)}`,
       {
         method: 'PUT',
         headers: this.getHeaders(),
@@ -546,8 +561,8 @@ export class GitHubProvider extends StorageProvider {
     const fileName = clean.split('/').pop() || clean;
     const message = commitMessage?.trim() || `Delete ${fileName} via Mandrak`;
 
-    const res = await fetch(
-      getGitHubApiUrl(`/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(clean)}`),
+    const res = await this.requestGitHub(
+      `/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(clean)}`,
       {
         method: 'DELETE',
         headers: this.getHeaders(),

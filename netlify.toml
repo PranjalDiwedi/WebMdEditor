@@ -1,0 +1,21 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/github/rest/*"
+  to = "https://api.github.com/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/github/oauth/exchange"
+  to = "/.netlify/functions/github-oauth"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
