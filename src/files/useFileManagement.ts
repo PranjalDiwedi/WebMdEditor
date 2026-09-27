@@ -100,6 +100,7 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
   setActiveTab: (fileId: string) => void;
   reorderTabs: (startIndex: number, endIndex: number) => void;
   syncSavedContent: (fileId: string, normalizedContent: string) => void;
+  updateFileById: (fileId: string, newContent: string) => Promise<void>;
 } {
   const workspaceKey = getWorkspaceKey(storageProvider);
   const workspaceKeyRef = useRef(workspaceKey);
@@ -597,6 +598,42 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     }
   }, [currentFile, storageProvider, saveToRecentFiles, showToast]);
 
+  const updateFileById = useCallback(
+    async (fileId: string, newContent: string) => {
+      const target = recentFiles.find((f) => f.id === fileId);
+      if (!target) return;
+
+      const preview = stripMarkdown(newContent);
+      const key = workspaceKeyRef.current;
+      const updatedFile: MarkdownFile = {
+        ...target,
+        content: newContent,
+        savedContent: newContent,
+        preview,
+        modifiedAt: new Date(),
+        size: newContent.length,
+        isDirty: false,
+      };
+
+      if (storageProvider && storageProvider.isAuthenticated) {
+        try {
+          await storageProvider.writeFile(target.id, newContent);
+        } catch (err) {
+          console.error('Failed to auto-sync connected wikilink to storage provider:', err);
+        }
+      }
+
+      setCachedPreview(key, updatedFile.id, preview, updatedFile.modifiedAt.getTime(), updatedFile.size);
+
+      setOpenTabs((prev) =>
+        prev.map((t) => (t.id === fileId ? { ...t, content: newContent, savedContent: newContent, preview, isDirty: false } : t))
+      );
+
+      saveToRecentFiles(updatedFile);
+    },
+    [recentFiles, storageProvider, saveToRecentFiles]
+  );
+
   const createFile = useCallback(async (name: string, content: string, path?: string, commitMessage?: string) => {
     if (!storageProvider) {
       createDraft(name, content, path);
@@ -994,5 +1031,6 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     setActiveTab,
     reorderTabs,
     syncSavedContent,
+    updateFileById,
   };
 }

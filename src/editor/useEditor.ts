@@ -109,17 +109,59 @@ function extractMarkdown(editor: unknown): string {
   return '';
 }
 
+export interface WikilinkQueryState {
+  isOpen: boolean;
+  query: string;
+  range: { from: number; to: number };
+  coords: { x: number; y: number };
+}
+
 export function useEditor(
   content: string,
   onUpdate: (content: string) => void,
   onSave?: () => void,
-  onInit?: (initialMarkdown: string) => void
+  onInit?: (initialMarkdown: string) => void,
+  onWikilinkQueryChange?: (state: WikilinkQueryState | null) => void,
+  onKeyDownInterceptor?: (event: KeyboardEvent) => boolean
 ) {
   const isUpdatingFromExternal = useRef(false);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
   const onInitRef = useRef(onInit);
   onInitRef.current = onInit;
+  const onWikilinkQueryChangeRef = useRef(onWikilinkQueryChange);
+  onWikilinkQueryChangeRef.current = onWikilinkQueryChange;
+  const onKeyDownInterceptorRef = useRef(onKeyDownInterceptor);
+  onKeyDownInterceptorRef.current = onKeyDownInterceptor;
+
+  const detectWikilinkQuery = (ed: any) => {
+    if (!onWikilinkQueryChangeRef.current) return;
+    try {
+      const { selection, doc } = ed.state;
+      const { from } = selection;
+      if (!selection.empty) {
+        onWikilinkQueryChangeRef.current(null);
+        return;
+      }
+      const textBefore = doc.textBetween(Math.max(0, from - 60), from, '\n', '\0');
+      const match = textBefore.match(/\[\[([^\]\r\n]*)$/);
+      if (match) {
+        const query = match[1];
+        const range = { from: from - match[0].length, to: from };
+        const coords = ed.view.coordsAtPos(from);
+        onWikilinkQueryChangeRef.current({
+          isOpen: true,
+          query,
+          range,
+          coords: { x: coords.left, y: coords.bottom + 4 },
+        });
+      } else {
+        onWikilinkQueryChangeRef.current(null);
+      }
+    } catch {
+      onWikilinkQueryChangeRef.current(null);
+    }
+  };
 
   const editor = useTipTapEditor({
     extensions: [
@@ -173,6 +215,13 @@ export function useEditor(
       attributes: {
         class: 'tiptap-editor',
       },
+      handleKeyDown: (_view, event) => {
+        if (onKeyDownInterceptorRef.current) {
+          const handled = onKeyDownInterceptorRef.current(event);
+          if (handled) return true;
+        }
+        return false;
+      },
     },
     onCreate: ({ editor }) => {
       try {
@@ -182,11 +231,15 @@ export function useEditor(
         }
       } catch {}
     },
+    onSelectionUpdate: ({ editor }) => {
+      detectWikilinkQuery(editor);
+    },
     onUpdate: ({ editor }) => {
       if (isUpdatingFromExternal.current) return;
       try {
         const markdown = extractMarkdown(editor);
         onUpdate(markdown);
+        detectWikilinkQuery(editor);
       } catch (error) {
         console.error('Error updating editor content:', error);
         onUpdate(editor.getText() || '');

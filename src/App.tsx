@@ -17,6 +17,7 @@ import { useFileManagement } from './files/useFileManagement';
 import { TipTapEditor } from './editor/TipTapEditor';
 import { EditorTabs } from './editor/EditorTabs';
 import type { ViewMode } from './editor/TipTapEditor';
+import { NetworkView } from './graph/NetworkView';
 import { MainLayout } from './layout/MainLayout';
 import { Modal } from './components/Modal';
 import { Button } from './components/Button';
@@ -115,6 +116,7 @@ function App() {
     setActiveTab,
     reorderTabs,
     syncSavedContent,
+    updateFileById,
   } = useFileManagement(storageProvider);
 
   const [tabToCloseWithWarning, setTabToCloseWithWarning] = useState<MarkdownFile | null>(null);
@@ -632,8 +634,8 @@ function App() {
                 )}
               </div>
 
-              {/* View Mode Switcher in Header (when a file is open) */}
-              {currentFile && (
+              {/* View Mode Switcher in Header (when a file or vault is active) */}
+              {(currentFile || recentFiles.length > 0) && (
                 <div className="header-center">
                   <div className="view-mode-switcher">
                     <button
@@ -668,6 +670,20 @@ function App() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                       <span>Preview</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`view-mode-btn ${viewMode === 'network' ? 'active' : ''}`}
+                      onClick={() => setViewMode('network')}
+                      title="Knowledge Network Graph (Betweenness Centrality)"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="6" cy="6" r="2.5" strokeWidth={2} />
+                        <circle cx="18" cy="6" r="2.5" strokeWidth={2} />
+                        <circle cx="12" cy="18" r="2.5" strokeWidth={2} />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8.5 6h7M7.5 8.5l3 7M16.5 8.5l-3 7" />
+                      </svg>
+                      <span>Network</span>
                     </button>
                   </div>
                 </div>
@@ -789,7 +805,7 @@ function App() {
               </div>
             )}
 
-            {fileLoading && (
+            {fileLoading && viewMode !== 'network' && (
               <div className="loading-container">
                 <div className="loading-spinner"></div>
                 <p>Loading note...</p>
@@ -816,77 +832,102 @@ function App() {
               />
             )}
 
-            {/* Landing Hero Screen when no storage is connected and no note/tabs are open */}
-            {!storageProvider && openTabs.length === 0 && (
-              <ProviderSelector
-                onProviderSelected={handleProviderSelected}
-                onDriveAuthenticated={handleDriveAuthenticated}
-                onRequestGitHub={() => setShowGitHubModal(true)}
-                onSelectTemplate={handleCreateFromTemplateDirect}
-                currentProvider={null}
-                variant="full"
-              />
-            )}
-
-            {/* Empty State when storage is connected but no tabs are open */}
-            {storageProvider && openTabs.length === 0 && (
-              <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
-                <div className="empty-state-icon">📝</div>
-                <h2>No Note Selected</h2>
-                <p>Pick a note from the sidebar or start writing a new one</p>
-                <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                  <button
-                    type="button"
-                    className="btn-browse-notes"
-                    onClick={toggleSidebar}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.45rem',
-                      padding: '0.55rem 1rem',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'var(--bg-surface)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text-primary)',
-                      cursor: 'pointer',
-                      fontSize: '0.875rem',
-                      fontWeight: 600,
-                      transition: 'all 0.18s ease'
-                    }}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                    </svg>
-                    <span>Browse Notes</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-new-file"
-                    onClick={() => setShowCreateModal(true)}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>Create New Note</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Active Editor Canvas */}
-            {currentFile && (
-              <div className="editor-container">
-                <TipTapEditor
-                  key={currentFile.id}
-                  content={currentFile.content}
-                  onContentChange={updateFileContent}
-                  onSave={handleSaveFile}
-                  onInit={(initialMd) => syncSavedContent(currentFile.id, initialMd)}
-                  isDirty={currentFile.isDirty}
-                  isSaving={fileLoading}
-                  viewMode={viewMode}
+            {/* Network View Mode */}
+            {viewMode === 'network' ? (
+              <div className="editor-container network-mode-container">
+                <NetworkView
+                  files={recentFiles}
+                  currentFile={currentFile}
+                  theme={theme}
+                  onOpenFile={(fileId) => {
+                    openFile(fileId);
+                    setViewMode('edit');
+                  }}
+                  onUpdateFileContent={updateFileById}
+                  onCreateDraft={(name, content, path) => {
+                    createDraft(name, content, path);
+                    setViewMode('edit');
+                  }}
+                  onExitView={() => setViewMode('edit')}
                 />
               </div>
+            ) : (
+              <>
+                {/* Landing Hero Screen when no storage is connected and no note/tabs are open */}
+                {!storageProvider && openTabs.length === 0 && (
+                  <ProviderSelector
+                    onProviderSelected={handleProviderSelected}
+                    onDriveAuthenticated={handleDriveAuthenticated}
+                    onRequestGitHub={() => setShowGitHubModal(true)}
+                    onSelectTemplate={handleCreateFromTemplateDirect}
+                    currentProvider={null}
+                    variant="full"
+                  />
+                )}
+
+                {/* Empty State when storage is connected but no tabs are open */}
+                {storageProvider && openTabs.length === 0 && (
+                  <div className="empty-state" style={{ height: '100%', justifyContent: 'center' }}>
+                    <div className="empty-state-icon">📝</div>
+                    <h2>No Note Selected</h2>
+                    <p>Pick a note from the sidebar or start writing a new one</p>
+                    <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn-browse-notes"
+                        onClick={toggleSidebar}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.45rem',
+                          padding: '0.55rem 1rem',
+                          borderRadius: 'var(--radius-md)',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text-primary)',
+                          cursor: 'pointer',
+                          fontSize: '0.875rem',
+                          fontWeight: 600,
+                          transition: 'all 0.18s ease'
+                        }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                        <span>Browse Notes</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-new-file"
+                        onClick={() => setShowCreateModal(true)}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                        </svg>
+                        <span>Create New Note</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Active Editor Canvas */}
+                {currentFile && (
+                  <div className="editor-container">
+                    <TipTapEditor
+                      key={currentFile.id}
+                      content={currentFile.content}
+                      onContentChange={updateFileContent}
+                      onSave={handleSaveFile}
+                      onInit={(initialMd) => syncSavedContent(currentFile.id, initialMd)}
+                      isDirty={currentFile.isDirty}
+                      isSaving={fileLoading}
+                      viewMode={viewMode}
+                      vaultFiles={recentFiles}
+                      currentFileId={currentFile.id}
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
         </MainLayout>
