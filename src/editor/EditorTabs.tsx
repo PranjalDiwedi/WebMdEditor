@@ -10,6 +10,7 @@ interface EditorTabsProps {
   onCloseOtherTabs?: (fileId: string) => void;
   onCloseAllTabs?: () => void;
   onNewTab?: () => void;
+  onRenameTab?: (fileId: string) => void;
   onReorderTabs?: (startIndex: number, endIndex: number) => void;
 }
 
@@ -21,6 +22,7 @@ export function EditorTabs({
   onCloseOtherTabs,
   onCloseAllTabs,
   onNewTab,
+  onRenameTab,
 }: EditorTabsProps) {
   const tabsScrollRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -110,6 +112,7 @@ export function EditorTabs({
               className={`editor-tab ${isActive ? 'active' : ''} ${tab.isDirty ? 'is-dirty' : ''}`}
               title={tooltip}
               onClick={() => onSelectTab(tab.id)}
+              onDoubleClick={() => onRenameTab?.(tab.id)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
@@ -197,6 +200,20 @@ export function EditorTabs({
           style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
           onClick={(e) => e.stopPropagation()}
         >
+          {onRenameTab && (
+            <button
+              type="button"
+              className="tab-context-item"
+              onClick={() => {
+                const targetId = contextMenu.fileId;
+                setContextMenu(null);
+                onRenameTab(targetId);
+              }}
+            >
+              <span>✏️</span> Rename Note
+            </button>
+          )}
+
           <button
             type="button"
             className="tab-context-item"

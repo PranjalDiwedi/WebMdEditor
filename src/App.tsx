@@ -72,10 +72,17 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isCreatingNote, setIsCreatingNote] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('edit');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    return (localStorage.getItem('webmd_view_mode') as ViewMode) || 'edit';
+  });
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('webmd_theme') as 'light' | 'dark') || 'dark';
   });
+
+  const [fileToRename, setFileToRename] = useState<MarkdownFile | null>(null);
+  const [renameInputValue, setRenameInputValue] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
 
   const [showGitHubModal, setShowGitHubModal] = useState(false);
   const [pendingGitHubProvider, setPendingGitHubProvider] = useState<GitHubProvider | null>(null);
@@ -108,6 +115,7 @@ function App() {
     moveFile,
     moveFolder,
     deleteFile,
+    renameFile,
     updateFileContent,
     createDraft,
     closeTab,
@@ -211,6 +219,55 @@ function App() {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('webmd_theme', theme);
   }, [theme]);
+
+  // Handle viewMode persistence
+  useEffect(() => {
+    localStorage.setItem('webmd_view_mode', viewMode);
+  }, [viewMode]);
+
+  const handleOpenRenameModal = useCallback((file: MarkdownFile) => {
+    setFileToRename(file);
+    setRenameInputValue(file.name);
+    setRenameError(null);
+  }, []);
+
+  const handleOpenRenameTab = useCallback((fileId: string) => {
+    const target = openTabs.find((t) => t.id === fileId) || recentFiles.find((f) => f.id === fileId);
+    if (target) {
+      handleOpenRenameModal(target);
+    }
+  }, [openTabs, recentFiles, handleOpenRenameModal]);
+
+  const handleConfirmRename = useCallback(async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!fileToRename) return;
+
+    const trimmed = renameInputValue.trim();
+    if (!trimmed) {
+      setRenameError('File name cannot be empty');
+      return;
+    }
+
+    const cleanName = ensureMarkdownFileName(trimmed);
+    const validation = validateFileName(cleanName);
+    if (!validation.valid) {
+      setRenameError(validation.error || 'Invalid file name');
+      return;
+    }
+
+    setIsRenaming(true);
+    setRenameError(null);
+    try {
+      const success = await renameFile(fileToRename.id, cleanName);
+      if (success) {
+        setFileToRename(null);
+      }
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : 'Failed to rename file');
+    } finally {
+      setIsRenaming(false);
+    }
+  }, [fileToRename, renameInputValue, renameFile]);
 
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
@@ -769,6 +826,7 @@ function App() {
                 onMoveFile={moveFile}
                 onMoveFolder={moveFolder}
                 onOpenMoveModal={setFileToMove}
+                onRenameFile={handleOpenRenameModal}
                 onDeleteFile={(fileId, fileName) => setFileToDelete({ id: fileId, name: fileName })}
                 onToggleSidebar={toggleSidebar}
                 searchQuery={searchQuery}
@@ -828,6 +886,7 @@ function App() {
                 onCloseOtherTabs={closeOtherTabs}
                 onCloseAllTabs={closeAllTabs}
                 onNewTab={() => handleOpenCreateModal()}
+                onRenameTab={handleOpenRenameTab}
                 onReorderTabs={reorderTabs}
               />
             )}
@@ -1204,6 +1263,54 @@ function App() {
               </div>
             </div>
           )}
+        </Modal>
+
+        {/* Rename Note Modal */}
+        <Modal
+          isOpen={!!fileToRename}
+          onClose={() => setFileToRename(null)}
+          title="Rename Note"
+        >
+          <form onSubmit={handleConfirmRename}>
+            <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                Note Name:
+              </label>
+              <input
+                type="text"
+                className="input-field"
+                value={renameInputValue}
+                onChange={(e) => {
+                  setRenameInputValue(e.target.value);
+                  setRenameError(null);
+                }}
+                autoFocus
+                placeholder="note-title.md"
+                style={{ width: '100%', padding: '0.6rem 0.8rem', fontSize: '0.95rem' }}
+              />
+              {renameError && (
+                <span className="error-hint" style={{ color: 'var(--danger)', fontSize: '0.8125rem', marginTop: '0.4rem', display: 'block' }}>
+                  {renameError}
+                </span>
+              )}
+            </div>
+            <div className="modal-actions" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setFileToRename(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isRenaming || !renameInputValue.trim()}
+              >
+                {isRenaming ? 'Renaming...' : 'Rename'}
+              </Button>
+            </div>
+          </form>
         </Modal>
 
         {/* Unsaved Changes Tab Close Warning Modal */}

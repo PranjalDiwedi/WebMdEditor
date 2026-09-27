@@ -11,6 +11,7 @@ export abstract class StorageProvider implements IStorageProvider {
   abstract writeFile(fileId: string, content: string, commitMessage?: string): Promise<void>;
   abstract createFile(name: string, content: string, path?: string, commitMessage?: string): Promise<StorageFile>;
   abstract deleteFile(fileId: string, commitMessage?: string): Promise<void>;
+  renameFile?(fileId: string, newName: string): Promise<void>;
   moveFile?(fileId: string, newPath: string, parentFolderId?: string): Promise<void>;
   abstract disconnect(): Promise<void>;
 

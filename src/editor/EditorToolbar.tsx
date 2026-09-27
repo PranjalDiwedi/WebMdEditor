@@ -14,8 +14,55 @@ export function EditorToolbar({ editor, onSave, isDirty = false, isSaving = fals
   }
 
   const setLink = () => {
+    const { from, to } = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(from, to, ' ').trim();
     const previousUrl = editor.getAttributes('link').href;
-    const url = window.prompt('Enter URL:', previousUrl);
+
+    // 1. Check if selected text is a raw markdown link: [anchor text](https://...)
+    const mdLinkMatch = selectedText.match(/^\[(.*?)\]\((.*?)\)$/);
+    if (mdLinkMatch) {
+      const linkText = mdLinkMatch[1];
+      const linkUrl = mdLinkMatch[2];
+      const url = window.prompt('Enter or edit URL:', linkUrl || previousUrl || '');
+      if (url === null) return;
+      if (url === '') {
+        editor.chain().focus().insertContentAt({ from, to }, linkText).run();
+        return;
+      }
+      editor
+        .chain()
+        .focus()
+        .insertContentAt({ from, to }, linkText)
+        .setTextSelection({ from, to: from + linkText.length })
+        .setLink({ href: url })
+        .run();
+      return;
+    }
+
+    // 2. Check if selected text is wrapped in brackets e.g. [anchor text]
+    const bracketMatch = selectedText.match(/^\[(.*?)\]$/);
+    if (bracketMatch) {
+      const linkText = bracketMatch[1];
+      const url = window.prompt('Enter URL:', previousUrl || '');
+      if (url === null) return;
+      if (url === '') {
+        editor.chain().focus().insertContentAt({ from, to }, linkText).run();
+        return;
+      }
+      editor
+        .chain()
+        .focus()
+        .insertContentAt({ from, to }, linkText)
+        .setTextSelection({ from, to: from + linkText.length })
+        .setLink({ href: url })
+        .run();
+      return;
+    }
+
+    // 3. Check if selected text is already a bare URL
+    const isUrl = /^https?:\/\/[^\s]+$/i.test(selectedText);
+    const defaultUrl = isUrl ? selectedText : (previousUrl || '');
+    const url = window.prompt('Enter URL:', defaultUrl);
 
     if (url === null) return;
     if (url === '') {
@@ -23,7 +70,11 @@ export function EditorToolbar({ editor, onSave, isDirty = false, isSaving = fals
       return;
     }
 
-    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    if (from === to) {
+      editor.chain().focus().insertContent(`<a href="${url}">${url}</a>`).run();
+    } else {
+      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }
   };
 
   return (

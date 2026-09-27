@@ -167,7 +167,7 @@ export function TipTapEditor({
       <div className={`editor-panes-wrapper mode-${viewMode}`}>
         {/* Left / Main Editor Pane (rendered in edit & split modes) */}
         {viewMode !== 'preview' && (
-          <div className="editor-pane">
+          <div className="editor-pane" id="editor-scroll-pane" data-scroll-container="editor">
             <div className="tiptap-editor-shell">
               <EditorContent
                 editor={editor}
@@ -192,7 +192,7 @@ export function TipTapEditor({
 
         {/* Right / Full Rendered Preview Pane (rendered in split & preview modes) */}
         {viewMode !== 'edit' && (
-          <div className="preview-pane">
+          <div className="preview-pane" id="preview-scroll-pane" data-scroll-container="preview">
             <div className="preview-document-container">
               <div
                 className="markdown-rendered"

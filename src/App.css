@@ -2020,6 +2020,8 @@
 .save-status-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 82px;
   gap: 0.35rem;
   padding: 0.3rem 0.75rem;
   border-radius: var(--radius-full);
@@ -2029,7 +2031,7 @@
   background: var(--bg-surface);
   color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .save-status-pill.dirty {
@@ -2811,7 +2813,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2500;
   padding: 1rem;
   animation: fadeIn 0.2s ease-out;
 }

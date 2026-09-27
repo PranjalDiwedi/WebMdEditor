@@ -29,7 +29,7 @@ export interface FileOperations {
   saveFile(commitMessage?: string): Promise<void>;
   createFile(name: string, content: string, path?: string, commitMessage?: string): Promise<void>;
   deleteFile(fileId: string, commitMessage?: string): Promise<void>;
-  renameFile(fileId: string, newName: string): Promise<void>;
+  renameFile(fileId: string, newName: string): Promise<boolean>;
   closeTab(fileId: string): void;
   closeOtherTabs(fileId: string): void;
   closeAllTabs(): void;

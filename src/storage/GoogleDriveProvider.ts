@@ -510,6 +510,23 @@ export class GoogleDriveProvider extends StorageProvider {
     }
   }
 
+  async renameFile(fileId: string, newName: string): Promise<void> {
+    await this.ensureReadyAsync();
+
+    try {
+      await this.rateLimiter.schedule(async () => {
+        await window.gapi.client.drive.files.update({
+          fileId,
+          resource: { name: newName },
+          fields: 'id, name',
+        });
+      });
+    } catch (error) {
+      logSecurityEvent('drive.renameFile', error);
+      throw new Error(toUserError(error, 'Failed to rename Google Drive file'));
+    }
+  }
+
   async deleteFile(fileId: string): Promise<void> {
     await this.ensureReadyAsync();
 

@@ -599,6 +599,14 @@ export class GitHubProvider extends StorageProvider {
     await this.deleteFile(oldClean, `Remove old ${oldClean} after moving`);
   }
 
+  async renameFile(fileId: string, newName: string): Promise<void> {
+    const oldClean = cleanFilePath(fileId);
+    const parts = oldClean.split('/');
+    parts[parts.length - 1] = newName;
+    const newPath = parts.join('/');
+    await this.moveFile(oldClean, newPath);
+  }
+
   async disconnect(): Promise<void> {
     this.token = '';
     this.owner = '';

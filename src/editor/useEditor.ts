@@ -35,15 +35,81 @@ const createMarkdownShortcutsExtension = (getOnSave: () => (() => void) | undefi
 
         // Insert / Edit Link (Mod-K)
         'Mod-k': () => {
+          const { from, to } = this.editor.state.selection;
+          const selectedText = this.editor.state.doc.textBetween(from, to, ' ').trim();
           const previousUrl = this.editor.getAttributes('link').href;
-          const url = window.prompt('Enter URL:', previousUrl);
+
+          // 1. Check if selected text is a raw markdown link: [anchor text](https://...)
+          const mdLinkMatch = selectedText.match(/^\[(.*?)\]\((.*?)\)$/);
+          if (mdLinkMatch) {
+            const linkText = mdLinkMatch[1];
+            const linkUrl = mdLinkMatch[2];
+            const url = window.prompt('Enter or edit URL:', linkUrl || previousUrl || '');
+            if (url === null) return true;
+            if (url === '') {
+              this.editor.chain().focus().insertContentAt({ from, to }, linkText).run();
+              return true;
+            }
+            this.editor
+              .chain()
+              .focus()
+              .insertContentAt({ from, to }, linkText)
+              .setTextSelection({ from, to: from + linkText.length })
+              .setLink({ href: url })
+              .run();
+            return true;
+          }
+
+          // 2. Check if selected text is wrapped in brackets e.g. [anchor text]
+          const bracketMatch = selectedText.match(/^\[(.*?)\]$/);
+          if (bracketMatch) {
+            const linkText = bracketMatch[1];
+            const url = window.prompt('Enter URL:', previousUrl || '');
+            if (url === null) return true;
+            if (url === '') {
+              this.editor.chain().focus().insertContentAt({ from, to }, linkText).run();
+              return true;
+            }
+            this.editor
+              .chain()
+              .focus()
+              .insertContentAt({ from, to }, linkText)
+              .setTextSelection({ from, to: from + linkText.length })
+              .setLink({ href: url })
+              .run();
+            return true;
+          }
+
+          // 3. Check if selected text is already a bare URL
+          const isUrl = /^https?:\/\/[^\s]+$/i.test(selectedText);
+          const defaultUrl = isUrl ? selectedText : (previousUrl || '');
+          const url = window.prompt('Enter URL:', defaultUrl);
+
           if (url === null) return true;
           if (url === '') {
             this.editor.chain().focus().extendMarkRange('link').unsetLink().run();
             return true;
           }
-          this.editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+          if (from === to) {
+            this.editor.chain().focus().insertContent(`<a href="${url}">${url}</a>`).run();
+          } else {
+            this.editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+          }
           return true;
+        },
+
+        // List Indentation / Outdent (Tab / Shift-Tab)
+        Tab: () => {
+          if (this.editor.can().sinkListItem('listItem')) {
+            return this.editor.chain().focus().sinkListItem('listItem').run();
+          }
+          return false;
+        },
+        'Shift-Tab': () => {
+          if (this.editor.can().liftListItem('listItem')) {
+            return this.editor.chain().focus().liftListItem('listItem').run();
+          }
+          return false;
         },
 
         // Headings (Mod-Alt-1..3 or Mod-1..3)

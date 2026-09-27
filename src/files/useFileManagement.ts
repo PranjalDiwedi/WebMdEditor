@@ -7,8 +7,7 @@ import { STORAGE_KEYS } from '../config/constants';
 import { stripMarkdown, normalizeMarkdown } from '../utils/markdownParser';
 import { sanitizeFileContent } from '../utils/htmlSanitizer';
 import { toUserError } from '../utils/securityErrors';
-import { ensureMarkdownFileName } from '../utils/fileValidation';
-import { exportToMarkdownFile } from '../utils/exportHelpers';
+import { ensureMarkdownFileName, validateFileName } from '../utils/fileValidation';
 import {
   setCachedPreview,
   removeCachedPreview,
@@ -531,7 +530,6 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     const preview = stripMarkdown(currentFile.content);
 
     if (!storageProvider) {
-      exportToMarkdownFile(currentFile.content, currentFile.name);
       const updated = {
         ...currentFile,
         preview,
@@ -549,8 +547,8 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
       showToast({
         id: `save-draft-${currentFile.id}-${Date.now()}`,
         type: 'success',
-        message: `Saved & downloaded "${currentFile.name}"`,
-        duration: 2200,
+        message: `Saved "${currentFile.name}"`,
+        duration: 2000,
       });
       return;
     }
@@ -905,9 +903,85 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     }
   }, [storageProvider, closeTab]);
 
-  const renameFile = useCallback(async (_fileId: string, _newName: string) => {
-    setError('Rename functionality not yet implemented');
-  }, []);
+  const renameFile = useCallback(
+    async (fileId: string, rawNewName: string): Promise<boolean> => {
+      const cleanName = ensureMarkdownFileName(rawNewName.trim());
+      const validation = validateFileName(cleanName);
+      if (!validation.valid) {
+        const msg = validation.error || 'Invalid file name';
+        setError(msg);
+        showToast({
+          id: `rename-err-${Date.now()}`,
+          type: 'error',
+          message: msg,
+        });
+        return false;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      const key = workspaceKeyRef.current;
+
+      try {
+        if (storageProvider && typeof storageProvider.renameFile === 'function') {
+          await storageProvider.renameFile(fileId, cleanName);
+        }
+
+        setOpenTabs((prev) => {
+          const updated = prev.map((tab) => {
+            if (tab.id === fileId) {
+              const oldPath = tab.path || '';
+              const parts = oldPath.split('/');
+              parts[parts.length - 1] = cleanName;
+              const newPath = parts.join('/');
+              return { ...tab, name: cleanName, path: newPath };
+            }
+            return tab;
+          });
+          persistTabs(updated, activeTabId);
+          return updated;
+        });
+
+        setRecentFiles((prev) => {
+          const updated = prev.map((f) => {
+            if (f.id === fileId) {
+              const oldPath = f.path || '';
+              const parts = oldPath.split('/');
+              parts[parts.length - 1] = cleanName;
+              const newPath = parts.join('/');
+              return { ...f, name: cleanName, path: newPath };
+            }
+            return f;
+          });
+          if (key === 'local_vault') {
+            setToStorage(STORAGE_KEYS.RECENT_FILES, updated);
+            setToStorage(`mandrak_recent_${key}`, updated);
+          }
+          return updated;
+        });
+
+        showToast({
+          id: `rename-success-${Date.now()}`,
+          type: 'success',
+          message: `Renamed to "${cleanName}"`,
+          duration: 2000,
+        });
+        return true;
+      } catch (err) {
+        const msg = toUserError(err, 'Failed to rename file');
+        setError(msg);
+        showToast({
+          id: `rename-fail-${Date.now()}`,
+          type: 'error',
+          message: msg,
+        });
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [storageProvider, showToast, persistTabs, activeTabId]
+  );
 
   const closeFile = useCallback((fileId?: string) => {
     const targetId = fileId || activeTabId;

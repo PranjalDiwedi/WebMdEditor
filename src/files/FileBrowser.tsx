@@ -20,6 +20,7 @@ interface FileBrowserProps {
   onMoveFile?: (fileId: string, destinationFolderPath: string) => void;
   onMoveFolder?: (sourceFolderPath: string, destinationFolderPath: string) => void;
   onOpenMoveModal?: (file: MarkdownFile) => void;
+  onRenameFile?: (file: MarkdownFile) => void;
   onDeleteFile?: (fileId: string, fileName: string, e: React.MouseEvent) => void;
   onToggleSidebar?: () => void;
   searchQuery: string;
@@ -166,6 +167,7 @@ export function FileBrowser({
   onMoveFile,
   onMoveFolder,
   onOpenMoveModal,
+  onRenameFile,
   onDeleteFile,
   onToggleSidebar,
   searchQuery,
@@ -408,7 +410,10 @@ export function FileBrowser({
                 <button
                   type="button"
                   className={`row-action-btn ${file.isPinned ? 'pinned' : ''}`}
-                  onClick={() => onTogglePin(file.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTogglePin(file.id);
+                  }}
                   title={file.isPinned ? 'Unpin note' : 'Pin note to top'}
                 >
                   📌
@@ -418,7 +423,10 @@ export function FileBrowser({
                 <button
                   type="button"
                   className="row-action-btn"
-                  onClick={() => onOpenMoveModal(file)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenMoveModal(file);
+                  }}
                   title="Move note to folder..."
                   aria-label="Move note to folder"
                 >
@@ -427,11 +435,29 @@ export function FileBrowser({
                   </svg>
                 </button>
               )}
+              {onRenameFile && (
+                <button
+                  type="button"
+                  className="row-action-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRenameFile(file);
+                  }}
+                  title="Rename note"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="12" height="12">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+              )}
               {onDuplicateFile && (
                 <button
                   type="button"
                   className="row-action-btn"
-                  onClick={() => onDuplicateFile(file.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDuplicateFile(file.id);
+                  }}
                   title="Duplicate note"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="12" height="12">
@@ -443,7 +469,10 @@ export function FileBrowser({
                 <button
                   type="button"
                   className="row-action-btn delete"
-                  onClick={(e) => onDeleteFile(file.id, file.name, e)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteFile(file.id, file.name, e);
+                  }}
                   title="Delete note"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="12" height="12">
@@ -497,7 +526,10 @@ export function FileBrowser({
               <button
                 type="button"
                 className={`card-action-btn ${file.isPinned ? 'active' : ''}`}
-                onClick={() => onTogglePin(file.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTogglePin(file.id);
+                }}
                 title={file.isPinned ? 'Unpin note' : 'Pin note to top'}
               >
                 📌
@@ -507,7 +539,10 @@ export function FileBrowser({
               <button
                 type="button"
                 className="card-action-btn"
-                onClick={() => onOpenMoveModal(file)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenMoveModal(file);
+                }}
                 title="Move note to folder..."
                 aria-label="Move note to folder"
               >
@@ -516,11 +551,29 @@ export function FileBrowser({
                 </svg>
               </button>
             )}
+            {onRenameFile && (
+              <button
+                type="button"
+                className="card-action-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRenameFile(file);
+                }}
+                title="Rename note"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
+            )}
             {onDuplicateFile && (
               <button
                 type="button"
                 className="card-action-btn"
-                onClick={() => onDuplicateFile(file.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDuplicateFile(file.id);
+                }}
                 title="Duplicate note"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13">
@@ -534,7 +587,10 @@ export function FileBrowser({
                 className="card-action-btn delete"
                 title={`Delete "${file.name}"`}
                 aria-label={`Delete ${file.name}`}
-                onClick={(e) => onDeleteFile(file.id, file.name, e)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteFile(file.id, file.name, e);
+                }}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
