@@ -8,7 +8,12 @@ interface EditorToolbarProps {
   isSaving?: boolean;
 }
 
-export function EditorToolbar({ editor, onSave, isDirty = false, isSaving = false }: EditorToolbarProps) {
+export function EditorToolbar({
+  editor,
+  onSave,
+  isDirty = false,
+  isSaving = false,
+}: EditorToolbarProps) {
   if (!editor) {
     return null;
   }

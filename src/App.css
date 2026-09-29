@@ -379,6 +379,12 @@
   height: 17px;
 }
 
+.icon-btn.ai-active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
 /* Layout Content (Sidebar + Main) */
 .layout-content {
   display: flex;
@@ -2875,8 +2881,20 @@
   cursor: pointer;
   padding: 0.35rem;
   border-radius: var(--radius-sm);
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  transition: all 0.15s ease;
+}
+
+.modal-close svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 2;
+  display: block;
 }
 
 .modal-close:hover {

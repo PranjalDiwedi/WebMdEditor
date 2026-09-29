@@ -64,6 +64,7 @@ When the cursor or selection is inside the markdown editor, the following standa
 | **Outdent List** | `Shift+Tab` | `Shift+Tab` | Lifts sub-list item up |
 | **Undo** | `⌘Z` | `Ctrl+Z` | Reverts last editing action |
 | **Redo** | `⌘⇧Z` | `Ctrl+Shift+Z` / `Ctrl+Y` | Re-applies reverted editing action |
+| **AI Assistant (BYOK)** | `⌘J` | `Ctrl+J` | Opens inline AI assistant to edit or transform text |
 
 ---
 

@@ -43,6 +43,14 @@ export function SettingsModal({ isOpen, onClose, theme, onThemeChange }: Setting
       ],
     },
     {
+      groupName: 'Mandrak AI Assistant (BYOK)',
+      items: [
+        { key: `${modSymbol}J`, desc: 'Open AI Assistant / Transform selected text' },
+        { key: 'Tab', desc: 'Accept & insert AI generated text' },
+        { key: 'Esc', desc: 'Discard / Close AI dialog' },
+      ],
+    },
+    {
       groupName: 'Markdown Editor Formatting',
       items: [
         { key: `${modSymbol}B`, desc: 'Bold text' },

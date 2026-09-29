@@ -1,9 +1,10 @@
-import { useState, useMemo, useCallback } from 'react';
-import { EditorContent } from '@tiptap/react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { EditorContent, type Editor } from '@tiptap/react';
 import { useEditor, type WikilinkQueryState } from './useEditor';
 import { EditorToolbar } from './EditorToolbar';
 import { sanitizeMarkdown } from '../utils/htmlSanitizer';
 import { WikilinkAutocomplete } from './WikilinkAutocomplete';
+import { useAI } from '../ai/useAI';
 import type { MarkdownFile } from '../types/file';
 
 export type ViewMode = 'edit' | 'split' | 'preview' | 'network';
@@ -13,6 +14,7 @@ interface TipTapEditorProps {
   onContentChange: (content: string) => void;
   onSave?: () => void;
   onInit?: (initialMarkdown: string) => void;
+  onEditorReady?: (editor: Editor) => void;
   isDirty?: boolean;
   isSaving?: boolean;
   viewMode?: ViewMode;
@@ -25,6 +27,7 @@ export function TipTapEditor({
   onContentChange,
   onSave,
   onInit,
+  onEditorReady,
   isDirty = false,
   isSaving = false,
   viewMode = 'edit',
@@ -123,14 +126,27 @@ export function TipTapEditor({
     [wikilinkQuery, totalOptions, selectedIndex, matchingFiles, handleInsertWikilink]
   );
 
+  const { setIsInlineMenuOpen } = useAI();
+
+  const handleOpenAI = useCallback(() => {
+    setIsInlineMenuOpen(true);
+  }, [setIsInlineMenuOpen]);
+
   const editor = useEditor(
     content,
     onContentChange,
     onSave,
     onInit,
     handleWikilinkQueryChange,
-    handleKeyDownInterceptor
+    handleKeyDownInterceptor,
+    handleOpenAI
   );
+
+  useEffect(() => {
+    if (editor && onEditorReady) {
+      onEditorReady(editor);
+    }
+  }, [editor, onEditorReady]);
 
   // Compute document statistics
   const stats = useMemo(() => {

@@ -12,7 +12,10 @@ import { useEffect, useRef } from 'react';
 /**
  * Custom TipTap extension for universal markdown shortcuts (Headings, Strikethrough, Code blocks, Lists, Links, and Direct Save).
  */
-const createMarkdownShortcutsExtension = (getOnSave: () => (() => void) | undefined) =>
+const createMarkdownShortcutsExtension = (
+  getOnSave: () => (() => void) | undefined,
+  getOnTriggerAI?: () => (() => void) | undefined
+) =>
   Extension.create({
     name: 'markdownShortcuts',
     addKeyboardShortcuts() {
@@ -29,6 +32,22 @@ const createMarkdownShortcutsExtension = (getOnSave: () => (() => void) | undefi
           const onSave = getOnSave();
           if (onSave) {
             onSave();
+          }
+          return true;
+        },
+
+        // Trigger AI Assistant (Mod-J)
+        'Mod-j': () => {
+          const onTriggerAI = getOnTriggerAI?.();
+          if (onTriggerAI) {
+            onTriggerAI();
+          }
+          return true;
+        },
+        'Mod-J': () => {
+          const onTriggerAI = getOnTriggerAI?.();
+          if (onTriggerAI) {
+            onTriggerAI();
           }
           return true;
         },
@@ -188,11 +207,14 @@ export function useEditor(
   onSave?: () => void,
   onInit?: (initialMarkdown: string) => void,
   onWikilinkQueryChange?: (state: WikilinkQueryState | null) => void,
-  onKeyDownInterceptor?: (event: KeyboardEvent) => boolean
+  onKeyDownInterceptor?: (event: KeyboardEvent) => boolean,
+  onTriggerAI?: () => void
 ) {
   const isUpdatingFromExternal = useRef(false);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const onTriggerAIRef = useRef(onTriggerAI);
+  onTriggerAIRef.current = onTriggerAI;
   const onInitRef = useRef(onInit);
   onInitRef.current = onInit;
   const onWikilinkQueryChangeRef = useRef(onWikilinkQueryChange);
@@ -274,7 +296,10 @@ export function useEditor(
         transformPastedText: true,
         transformCopiedText: true,
       }),
-      createMarkdownShortcutsExtension(() => onSaveRef.current),
+      createMarkdownShortcutsExtension(
+        () => onSaveRef.current,
+        () => onTriggerAIRef.current
+      ),
     ],
     content: sanitizeFileContent(content),
     editorProps: {

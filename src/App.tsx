@@ -24,6 +24,9 @@ import { Button } from './components/Button';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastContainer } from './components/Toast';
 import { MandrakLogo } from './components/MandrakLogo';
+import { useAI } from './ai/useAI';
+import { AIConnectModal } from './ai/AIConnectModal';
+import { AIInlineToolbar } from './ai/AIInlineToolbar';
 import { preloadGoogleScripts } from './utils/googleScripts';
 import { OAUTH_CONFIGS } from './config/constants';
 import { exportToMarkdownFile, exportToHTMLFile, printContent } from './utils/exportHelpers';
@@ -60,6 +63,16 @@ const NOTE_TEMPLATES = [
 
 function App() {
   const { user, isAuthenticated, isLoading: authLoading, error: authError, signOut } = useAuth();
+  const {
+    isConnected: isAIConnected,
+    config: aiConfig,
+    isConfigModalOpen: isAIModalOpen,
+    setIsConfigModalOpen: setIsAIModalOpen,
+    isInlineMenuOpen,
+    setIsInlineMenuOpen,
+    openAIModal,
+  } = useAI();
+  const activeEditorRef = useRef<any>(null);
   const [storageProvider, setStorageProvider] = useState<StorageProvider | null>(null);
   const [pendingDriveProvider, setPendingDriveProvider] = useState<GoogleDriveProvider | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -532,6 +545,17 @@ function App() {
           }
         }
 
+        // 7. Trigger AI Assistant: Mod+J (Global anywhere)
+        if (key === 'j') {
+          e.preventDefault();
+          if (!isAIConnected) {
+            openAIModal();
+          } else {
+            setIsInlineMenuOpen(true);
+          }
+          return;
+        }
+
         // 7. Switch Tab via Mod+Alt+1..9
         if (e.altKey && !isInsideEditor && !isInsideInput) {
           const num = parseInt(key, 10);
@@ -747,6 +771,49 @@ function App() {
               )}
 
               <div className="header-right">
+                {/* AI Assistant Icon Button (Smart 2-Step Trigger) */}
+                <button
+                  type="button"
+                  className={`icon-btn ${isAIConnected ? 'ai-active' : ''}`}
+                  onClick={() => {
+                    if (!isAIConnected) {
+                      openAIModal();
+                    } else {
+                      setIsInlineMenuOpen(true);
+                    }
+                  }}
+                  title={
+                    isAIConnected && aiConfig
+                      ? `AI Assistant (${aiConfig.provider.toUpperCase()}: ${aiConfig.model}) — Click to Open Assistant (${modSymbol}J)`
+                      : 'AI Assistant (BYOK) — Click to Configure API Key'
+                  }
+                  aria-label="AI Assistant"
+                  style={{ position: 'relative' }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"
+                    />
+                  </svg>
+                  {isAIConnected && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '4px',
+                        right: '4px',
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--success, #22c55e)',
+                        boxShadow: '0 0 4px var(--success, #22c55e)',
+                      }}
+                    />
+                  )}
+                </button>
+
                 {/* 1-Click Sun/Moon Theme Switcher */}
                 <button
                   type="button"
@@ -978,6 +1045,9 @@ function App() {
                       onContentChange={updateFileContent}
                       onSave={handleSaveFile}
                       onInit={(initialMd) => syncSavedContent(currentFile.id, initialMd)}
+                      onEditorReady={(editor) => {
+                        activeEditorRef.current = editor;
+                      }}
                       isDirty={currentFile.isDirty}
                       isSaving={fileLoading}
                       viewMode={viewMode}
@@ -1393,6 +1463,24 @@ function App() {
           onClose={() => setShowSettings(false)}
           theme={theme}
           onThemeChange={setTheme}
+        />
+
+        <AIConnectModal
+          isOpen={isAIModalOpen}
+          onClose={() => setIsAIModalOpen(false)}
+        />
+
+        <AIInlineToolbar
+          isOpen={isInlineMenuOpen}
+          onClose={() => setIsInlineMenuOpen(false)}
+          editor={viewMode !== 'network' ? activeEditorRef.current : null}
+          currentFile={currentFile}
+          files={recentFiles}
+          viewMode={viewMode}
+          onCreateNote={(title, content) => {
+            createDraft(title, content);
+            setViewMode('edit');
+          }}
         />
 
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
