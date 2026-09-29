@@ -375,8 +375,8 @@
 }
 
 .icon-btn svg {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
 }
 
 .icon-btn.ai-active {
@@ -5881,4 +5881,539 @@
   background: rgba(168, 85, 247, 0.16);
   color: #c084fc;
   border-color: rgba(168, 85, 247, 0.35);
+}
+
+/* ==========================================================================
+   Features v2: Universal Spotlight Command Palette
+   ========================================================================== */
+
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  animation: paletteFadeIn 0.15s ease-out;
+}
+
+@keyframes paletteFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.command-palette-modal {
+  width: 100%;
+  max-width: 620px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 14px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(99, 102, 241, 0.18);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: paletteSlideDown 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes paletteSlideDown {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.command-palette-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.15rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.palette-search-icon {
+  font-size: 1.1rem;
+  opacity: 0.8;
+}
+
+.command-palette-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--text-primary);
+}
+
+.command-palette-input::placeholder {
+  color: var(--text-muted);
+}
+
+.palette-esc-badge {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  background: var(--bg-app);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.command-palette-body {
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.palette-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.palette-item:hover,
+.palette-item.active {
+  background: var(--accent-subtle, rgba(99, 102, 241, 0.12));
+  transform: translateX(2px);
+}
+
+.palette-item.active .palette-item-title {
+  color: var(--accent, #6366f1);
+}
+
+.palette-item-icon {
+  font-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--bg-app);
+  flex-shrink: 0;
+}
+
+.palette-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.palette-item-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette-item-subtitle {
+  font-size: 0.725rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette-item-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: var(--bg-app);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.palette-item-shortcut {
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.palette-empty-state {
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.palette-empty-state p {
+  margin: 0 0 0.35rem 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.palette-empty-state span {
+  font-size: 0.775rem;
+}
+
+.palette-empty-state code {
+  color: var(--accent);
+  background: var(--bg-app);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+}
+
+.command-palette-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  background: var(--bg-app);
+  border-top: 1px solid var(--border);
+  font-size: 0.725rem;
+  color: var(--text-muted);
+}
+
+.palette-hints {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.palette-hints kbd {
+  font-family: var(--font-mono, monospace);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.08rem 0.3rem;
+  margin-right: 0.2rem;
+  font-size: 0.65rem;
+}
+
+.palette-brand-tag {
+  font-weight: 600;
+  color: var(--accent, #6366f1);
+}
+
+/* ==========================================================================
+   Features v2: Focus / Zen Mode
+   ========================================================================== */
+
+.app.zen-mode .app-header,
+.app.zen-mode .main-sidebar,
+.app.zen-mode .editor-status-bar,
+.app.zen-mode .editor-toolbar,
+.app.zen-mode .editor-tabs-strip {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.app.zen-mode .editor-section {
+  padding: 0 !important;
+  max-width: 100% !important;
+}
+
+.app.zen-mode .editor-panes-wrapper {
+  max-width: 860px !important;
+  margin: 0 auto !important;
+  padding: 2.5rem 1rem 5rem 1rem !important;
+}
+
+.app.zen-mode .tiptap-editor {
+  font-size: 1.125rem !important;
+  line-height: 1.85 !important;
+}
+
+.zen-mode-exit-btn {
+  position: fixed;
+  top: 1.25rem;
+  right: 1.5rem;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.775rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(12px);
+  opacity: 0.3;
+  transition: all 0.2s ease;
+}
+
+.zen-mode-exit-btn:hover {
+  opacity: 1;
+  color: var(--text-primary);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.zen-mode-exit-btn kbd {
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-family: var(--font-mono, monospace);
+}
+
+/* ==========================================================================
+   Features v2: macOS Code Block Cards & 1-Click Copy
+   ========================================================================== */
+
+.code-block-card {
+  margin: 1.25rem 0;
+  border-radius: 10px;
+  background: #0b1120;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mac-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mac-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.mac-dot.dot-red {
+  background: #ff5f56;
+}
+
+.mac-dot.dot-yellow {
+  background: #ffbd2e;
+}
+
+.mac-dot.dot-green {
+  background: #27c93f;
+}
+
+.code-block-lang {
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.code-block-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.code-block-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.code-block-copy-btn.copied {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+.code-block-card pre {
+  margin: 0 !important;
+  padding: 1rem 1.15rem !important;
+  background: transparent !important;
+  overflow-x: auto;
+}
+
+.code-block-card pre code {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+  font-size: 0.875rem !important;
+  line-height: 1.65 !important;
+  background: transparent !important;
+  color: #e2e8f0 !important;
+  padding: 0 !important;
+  display: block;
+}
+
+/* ==========================================================================
+   Zero-Bloat Syntax Highlighting Tokens
+   ========================================================================== */
+
+.tok-keyword {
+  color: #c084fc !important; /* Vibrant Purple */
+  font-weight: 600;
+}
+
+.tok-string {
+  color: #4ade80 !important; /* Fresh Green */
+}
+
+.tok-number {
+  color: #fb923c !important; /* Orange */
+}
+
+.tok-comment {
+  color: #64748b !important; /* Muted Slate */
+  font-style: italic;
+}
+
+.tok-type {
+  color: #38bdf8 !important; /* Cyan */
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Mermaid Diagrams & KaTeX Math
+   ========================================================================== */
+
+.mermaid-diagram {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-error {
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.katex-render.katex-block {
+  margin: 1.25rem 0;
+  padding: 0.85rem 1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  text-align: center;
+  overflow-x: auto;
+}
+
+.katex-render.katex-inline {
+  display: inline-block;
+  vertical-align: middle;
+  padding: 0 0.2rem;
+}
+
+/* ==========================================================================
+   Clean Print Stylesheet (@media print)
+   ========================================================================== */
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .app-header,
+  .main-sidebar,
+  .editor-status-bar,
+  .editor-toolbar,
+  .editor-tabs-strip,
+  .icon-btn,
+  .zen-mode-exit-btn,
+  .command-palette-backdrop,
+  .mandrak-toast-container {
+    display: none !important;
+  }
+
+  .editor-panes-wrapper {
+    display: block !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .preview-pane,
+  .preview-document-container,
+  .markdown-rendered {
+    display: block !important;
+    width: 100% !important;
+    padding: 0 !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+  }
+
+  .code-block-card {
+    background: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #0f172a !important;
+    break-inside: avoid;
+  }
+
+  .code-block-header {
+    background: #e2e8f0 !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+  }
+
+  .code-block-copy-btn {
+    display: none !important;
+  }
+
+  .code-block-card pre code {
+    color: #0f172a !important;
+  }
 }

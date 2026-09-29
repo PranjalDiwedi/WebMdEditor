@@ -23,6 +23,7 @@ import { Modal } from './components/Modal';
 import { Button } from './components/Button';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastContainer } from './components/Toast';
+import { CommandPalette } from './components/CommandPalette';
 import { MandrakLogo } from './components/MandrakLogo';
 import { useAI } from './ai/useAI';
 import { AIConnectModal } from './ai/AIConnectModal';
@@ -30,8 +31,9 @@ import { AIInlineToolbar } from './ai/AIInlineToolbar';
 import { preloadGoogleScripts } from './utils/googleScripts';
 import { OAUTH_CONFIGS } from './config/constants';
 import { exportToMarkdownFile, exportToHTMLFile, printContent } from './utils/exportHelpers';
+import { copyMarkdownAsRichText } from './utils/exportUtils';
 import { ensureMarkdownFileName, validateFileName } from './utils/fileValidation';
-import { modSymbol, focusSearchInput } from './utils/keyboard';
+import { modSymbol } from './utils/keyboard';
 import './App.css';
 
 const NOTE_TEMPLATES = [
@@ -101,6 +103,8 @@ function App() {
   const [pendingGitHubProvider, setPendingGitHubProvider] = useState<GitHubProvider | null>(null);
   const [showGitHubRepoPicker, setShowGitHubRepoPicker] = useState(false);
   const [showCommitModal, setShowCommitModal] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isZenMode, setIsZenMode] = useState(false);
   const [createFolderPath, setCreateFolderPath] = useState<string | undefined>(undefined);
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -114,6 +118,7 @@ function App() {
     recentFiles,
     customFolders,
     toasts,
+    showToast,
     dismissToast,
     isLoading: fileLoading,
     error: fileError,
@@ -490,6 +495,41 @@ function App() {
     }
   }, [currentFile]);
 
+  const handleCopyRichText = useCallback(() => {
+    if (!currentFile || !currentFile.content) {
+      showToast({
+        id: `toast-${Date.now()}`,
+        type: 'info',
+        message: 'No note content to copy.',
+        duration: 2500,
+      });
+      return;
+    }
+    copyMarkdownAsRichText(currentFile.content).then((ok) => {
+      if (ok) {
+        showToast({
+          id: `toast-${Date.now()}`,
+          type: 'success',
+          message: '✓ Copied note as Rich Text (HTML) to clipboard!',
+          duration: 3200,
+        });
+      } else {
+        showToast({
+          id: `toast-${Date.now()}`,
+          type: 'error',
+          message: 'Failed to copy note as rich text.',
+          duration: 3200,
+        });
+      }
+    });
+  }, [currentFile, showToast]);
+
+  const handleInsertCodeSnippet = useCallback((snippet: string) => {
+    if (activeEditorRef.current) {
+      activeEditorRef.current.chain().focus().insertContent(snippet).run();
+    }
+  }, []);
+
   // Global Keyboard Shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -509,7 +549,21 @@ function App() {
           return;
         }
 
-        // 2. Close Active Tab: Mod+W
+        // 2. Focus / Zen Mode: Mod+Shift+F
+        if (key === 'f' && e.shiftKey) {
+          e.preventDefault();
+          setIsZenMode((prev) => !prev);
+          return;
+        }
+
+        // 3. Copy Note as Rich Text: Mod+Shift+C
+        if (key === 'c' && e.shiftKey) {
+          e.preventDefault();
+          handleCopyRichText();
+          return;
+        }
+
+        // 4. Close Active Tab: Mod+W
         if (key === 'w') {
           e.preventDefault();
           if (currentFile) {
@@ -518,45 +572,40 @@ function App() {
           return;
         }
 
-        // 3. Cycle View Mode: Mod+P
+        // 5. Cycle View Mode: Mod+P
         if (key === 'p') {
           e.preventDefault();
           setViewMode((prev) => (prev === 'edit' ? 'split' : prev === 'split' ? 'preview' : 'edit'));
           return;
         }
 
-        // 4. Create New Note: Mod+N
+        // 6. Create New Note: Mod+N
         if (key === 'n' && !e.shiftKey) {
           e.preventDefault();
           handleOpenCreateModal();
           return;
         }
 
-        // 5. Toggle Sidebar: Mod+\ (or Mod+B when not in editor/input)
+        // 7. Toggle Sidebar: Mod+\ (or Mod+B when not in editor/input)
         if (e.key === '\\' || (!isInsideEditor && !isInsideInput && key === 'b')) {
           e.preventDefault();
           toggleSidebar();
           return;
         }
 
-        // 6. Search Focus: Mod+K (when not inside editor)
+        // 8. Universal Command Palette: Mod+K (Spotlight modal)
         if (key === 'k') {
-          if (!isInsideEditor) {
-            e.preventDefault();
-            if (sidebarCollapsed) {
-              setSidebarCollapsed(false);
-            }
-            if (!mobileMenuOpen) {
-              setMobileMenuOpen(true);
-            }
-            setTimeout(() => {
-              focusSearchInput();
-            }, 50);
+          const hasTextSelection = activeEditorRef.current && !activeEditorRef.current.state.selection.empty;
+          if (isInsideEditor && hasTextSelection) {
+            // Let TipTap handle Link prompt on highlighted text
             return;
           }
+          e.preventDefault();
+          setIsCommandPaletteOpen((prev) => !prev);
+          return;
         }
 
-        // 7. Trigger AI Assistant: Mod+J (Global anywhere)
+        // 9. Trigger AI Assistant: Mod+J (Global anywhere)
         if (key === 'j') {
           e.preventDefault();
           if (!isAIConnected) {
@@ -617,7 +666,13 @@ function App() {
 
       // 6. Escape Key Handler
       if (e.key === 'Escape') {
-        if (showCreateModal) {
+        if (isCommandPaletteOpen) {
+          setIsCommandPaletteOpen(false);
+          return;
+        } else if (isZenMode) {
+          setIsZenMode(false);
+          return;
+        } else if (showCreateModal) {
           if (!isCreatingNote) {
             setShowCreateModal(false);
             setCreateNameError(null);
@@ -644,13 +699,18 @@ function App() {
       currentFile,
       openTabs,
       activeTabId,
+      isCommandPaletteOpen,
+      isZenMode,
+      handleCopyRichText,
       setActiveTab,
       handleRequestCloseTab,
       handleSaveFile,
       handleOpenCreateModal,
       toggleSidebar,
-      sidebarCollapsed,
       mobileMenuOpen,
+      isAIConnected,
+      openAIModal,
+      setIsInlineMenuOpen,
       showCreateModal,
       isCreatingNote,
       showCreateFolderModal,
@@ -677,7 +737,18 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <div className="app">
+      <div className={`app ${isZenMode ? 'zen-mode' : ''}`}>
+        {isZenMode && (
+          <button
+            type="button"
+            className="zen-mode-exit-btn"
+            onClick={() => setIsZenMode(false)}
+            title="Exit Focus Mode (Esc)"
+          >
+            <span>✕ Exit Focus Mode</span>
+            <kbd>ESC</kbd>
+          </button>
+        )}
         <MainLayout
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={toggleSidebar}
@@ -825,6 +896,37 @@ function App() {
                   )}
                 </button>
 
+                {/* Spotlight / Command Palette Button */}
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setIsCommandPaletteOpen(true)}
+                  title={`Command Palette (${modSymbol}K)`}
+                  aria-label="Command Palette"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.2}
+                      d="M4 5l8 7-8 7M14 19h7"
+                    />
+                  </svg>
+                </button>
+
+                {/* Focus / Zen Mode Toggle */}
+                <button
+                  type="button"
+                  className={`icon-btn ${isZenMode ? 'active' : ''}`}
+                  onClick={() => setIsZenMode((prev) => !prev)}
+                  title={`Focus / Zen Mode (${modSymbol}⇧F)`}
+                  aria-label="Toggle Focus Mode"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                  </svg>
+                </button>
+
                 {/* 1-Click Sun/Moon Theme Switcher */}
                 <button
                   type="button"
@@ -864,6 +966,9 @@ function App() {
                         </div>
                         <div className="export-dropdown-item" onClick={handleExportHTML}>
                           <span>🌐</span> Export as HTML
+                        </div>
+                        <div className="export-dropdown-item" onClick={handleCopyRichText}>
+                          <span>📋</span> Copy as Rich Text
                         </div>
                         <div className="export-dropdown-item" onClick={handlePrint}>
                           <span>🖨️</span> Print / PDF
@@ -1493,6 +1598,32 @@ function App() {
             createDraft(title, content);
             setViewMode('edit');
           }}
+        />
+
+        <CommandPalette
+          isOpen={isCommandPaletteOpen}
+          onClose={() => setIsCommandPaletteOpen(false)}
+          files={recentFiles}
+          currentFileId={currentFile?.id}
+          onOpenFile={(f) => {
+            openFile(f.id);
+          }}
+          onNewNote={() => handleOpenCreateModal()}
+          onToggleTheme={toggleTheme}
+          isDarkMode={theme === 'dark'}
+          onToggleZenMode={() => setIsZenMode((prev) => !prev)}
+          isZenMode={isZenMode}
+          onCycleViewMode={() => {
+            setViewMode((prev) => (prev === 'edit' ? 'split' : prev === 'split' ? 'preview' : prev === 'preview' ? 'network' : 'edit'));
+          }}
+          currentViewMode={viewMode}
+          onCopyRichText={handleCopyRichText}
+          onTriggerAI={() => {
+            if (!isAIConnected) openAIModal();
+            else setIsInlineMenuOpen(true);
+          }}
+          onOpenStorageSelector={() => handleGoHome()}
+          onInsertCodeSnippet={handleInsertCodeSnippet}
         />
 
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />

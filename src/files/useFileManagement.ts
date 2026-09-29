@@ -82,6 +82,7 @@ function saveStoredTabs(workspaceKey: string, data: StoredTabsData): void {
 export function useFileManagement(storageProvider: StorageProvider | null): FileState & FileOperations & {
   customFolders: string[];
   toasts: ToastMessage[];
+  showToast: (toast: ToastMessage) => void;
   dismissToast: (id: string) => void;
   setSearchQuery: (query: string) => void;
   updateFileContent: (content: string) => void;
@@ -1053,15 +1054,6 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     }
   }, [activeTabId]);
 
-  const filteredFiles = recentFiles.filter((file) => {
-    const query = searchQuery.toLowerCase();
-    const name = file.name.toLowerCase();
-    const content = file.preview
-      ? file.preview.toLowerCase()
-      : stripMarkdown(file.content).toLowerCase();
-    return name.includes(query) || content.includes(query);
-  });
-
   const createFolder = useCallback((folderPath: string) => {
     const cleanPath = folderPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
     if (!cleanPath) return;
@@ -1078,9 +1070,10 @@ export function useFileManagement(storageProvider: StorageProvider | null): File
     currentFile,
     openTabs,
     activeTabId,
-    recentFiles: filteredFiles,
+    recentFiles,
     customFolders,
     toasts,
+    showToast,
     dismissToast,
     isLoading,
     error,

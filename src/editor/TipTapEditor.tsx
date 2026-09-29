@@ -5,6 +5,7 @@ import { EditorToolbar } from './EditorToolbar';
 import { sanitizeMarkdown } from '../utils/htmlSanitizer';
 import { WikilinkAutocomplete } from './WikilinkAutocomplete';
 import { useAI } from '../ai/useAI';
+import { renderMermaidDiagrams, renderMathEquations } from '../preview/lazyEngines';
 import type { MarkdownFile } from '../types/file';
 
 export type ViewMode = 'edit' | 'split' | 'preview' | 'network';
@@ -200,9 +201,38 @@ export function TipTapEditor({
     return sanitizeMarkdown(content);
   }, [content, viewMode]);
 
-  // Handle clicking wikilinks in Preview Pane
+  // Handle clicking wikilinks & 1-click code copying in Preview Pane
   const handlePreviewClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      // 1. Check if copy button was clicked
+      const copyBtn = (e.target as HTMLElement).closest('.code-block-copy-btn') as HTMLElement | null;
+      if (copyBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const encodedTarget = copyBtn.getAttribute('data-copy-target');
+        const codeText = encodedTarget
+          ? decodeURIComponent(encodedTarget)
+          : copyBtn.closest('.code-block-card')?.querySelector('pre code')?.textContent || '';
+
+        if (codeText) {
+          navigator.clipboard.writeText(codeText).then(() => {
+            copyBtn.classList.add('copied');
+            const textSpan = copyBtn.querySelector('.copy-text');
+            const iconSpan = copyBtn.querySelector('.copy-icon');
+            if (textSpan) textSpan.textContent = 'Copied!';
+            if (iconSpan) iconSpan.textContent = '✓';
+
+            setTimeout(() => {
+              copyBtn.classList.remove('copied');
+              if (textSpan) textSpan.textContent = 'Copy';
+              if (iconSpan) iconSpan.textContent = '📋';
+            }, 2000);
+          });
+        }
+        return;
+      }
+
+      // 2. Check if a wikilink preview was clicked
       const target = (e.target as HTMLElement).closest('.wikilink-preview') as HTMLElement | null;
       if (target && onOpenFileByName) {
         const targetNote = target.getAttribute('data-target');
@@ -213,6 +243,22 @@ export function TipTapEditor({
     },
     [onOpenFileByName]
   );
+
+  // Lazy render Mermaid diagrams and Math equations when preview HTML changes
+  useEffect(() => {
+    if (viewMode === 'edit' || !renderedHTML) return;
+
+    const timer = setTimeout(() => {
+      const previewEl = document.querySelector('.markdown-rendered') as HTMLElement | null;
+      if (previewEl) {
+        const isDark = document.body.classList.contains('dark-theme');
+        renderMermaidDiagrams(previewEl, isDark);
+        renderMathEquations(previewEl);
+      }
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [renderedHTML, viewMode]);
 
   if (!editor) {
     return <div className="loading-container"><div className="loading-spinner"></div><p>Loading editor...</p></div>;

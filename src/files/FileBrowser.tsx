@@ -301,8 +301,8 @@ export function FileBrowser({
   }, [files, searchQuery, filterTab, sortOption]);
 
   const treeData = useMemo(() => {
-    return buildFileTree(filteredAndSortedFiles, customFolders);
-  }, [filteredAndSortedFiles, customFolders]);
+    return buildFileTree(filteredAndSortedFiles, searchQuery.trim() ? [] : customFolders);
+  }, [filteredAndSortedFiles, customFolders, searchQuery]);
 
   useEffect(() => {
     if (searchQuery.trim()) {
@@ -952,7 +952,7 @@ export function FileBrowser({
         </div>
       </div>
 
-      {/* 3. Search Bar */}
+      {/* 3. Search & Filter Bar */}
       <div className="search-container">
         <div className="search-input-wrapper">
           <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -962,7 +962,7 @@ export function FileBrowser({
             id="mandrak-search-input"
             type="text"
             className="search-input"
-            placeholder={navMode === 'folders' ? 'Search files & folders...' : 'Search notes...'}
+            placeholder={navMode === 'folders' ? 'Filter files & folders...' : 'Filter notes...'}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             onKeyDown={(e) => {
@@ -975,27 +975,15 @@ export function FileBrowser({
               }
             }}
           />
-          {searchQuery ? (
+          {searchQuery && (
             <button
               className="search-clear-btn"
               onClick={() => onSearchChange('')}
-              title="Clear search (Esc)"
+              title="Clear filter (Esc)"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="search-shortcut-badge"
-              onClick={() => {
-                const el = document.getElementById('mandrak-search-input') as HTMLInputElement | null;
-                el?.focus();
-              }}
-              title={`Focus search (${modSymbol}K)`}
-            >
-              {modSymbol}K
             </button>
           )}
         </div>
@@ -1088,10 +1076,26 @@ export function FileBrowser({
               <div className="skeleton-box skeleton-text skeleton-preview" />
             </div>
           </div>
-        ) : filteredAndSortedFiles.length === 0 && customFolders.length === 0 ? (
+        ) : searchQuery.trim() && filteredAndSortedFiles.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">🔍</div>
+            <p style={{ fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 0.25rem 0' }}>
+              No notes match &ldquo;{searchQuery}&rdquo;
+            </p>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 0.75rem 0' }}>
+              Check for typos or try searching another keyword.
+            </p>
+            <button
+              onClick={() => onSearchChange('')}
+              className="btn-new-file"
+            >
+              Clear Filter
+            </button>
+          </div>
+        ) : files.length === 0 && customFolders.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📝</div>
-            <p>{searchQuery ? 'No matching notes found' : 'No markdown notes in this root vault'}</p>
+            <p>No markdown notes in this root vault</p>
             <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.35rem' }}>
               <button onClick={() => onCreateFile()} className="btn-new-file">
                 New Note in Root
@@ -1109,7 +1113,7 @@ export function FileBrowser({
           </div>
         ) : (
           <div className="timeline-view">
-            {timelineGroups.map((group) => (
+            {timelineGroups.filter((g) => g.files.length > 0).map((group) => (
               <div key={group.id} className="timeline-section">
                 <div className="timeline-section-header">
                   <span className="timeline-section-title">{group.title}</span>

@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
+import { highlightCode } from './codeHighlighter';
 
 const purifyConfig = {
   ALLOWED_TAGS: [
@@ -7,14 +8,55 @@ const purifyConfig = {
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
     'ul', 'ol', 'li', 'blockquote', 'a', 'hr',
     'table', 'thead', 'tbody', 'tr', 'th', 'td',
-    'span'
+    'span', 'div', 'button', 'svg', 'path'
   ],
-  ALLOWED_ATTR: ['href', 'title', 'class', 'target', 'rel', 'data-target', 'data-relation'],
+  ALLOWED_ATTR: [
+    'href', 'title', 'class', 'target', 'rel', 'data-target', 'data-relation',
+    'data-copy-target', 'data-language', 'data-mermaid', 'data-math', 'data-rendered',
+    'type', 'aria-label', 'viewBox', 'd', 'fill', 'stroke'
+  ],
   ALLOW_DATA_ATTR: true,
-  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
   FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onmouseout', 'onfocus', 'onblur'],
   ADD_ATTR: ['target', 'rel'],
 };
+
+// Configure custom marked renderer for macOS Code Cards and Diagrams
+const renderer = new marked.Renderer();
+
+renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
+  const cleanLang = (lang || '').trim().toLowerCase();
+
+  // 1. Mermaid diagram block
+  if (cleanLang === 'mermaid') {
+    const safeDiagram = text.replace(/"/g, '&quot;');
+    return `<div class="mermaid-diagram" data-mermaid="${safeDiagram}"></div>`;
+  }
+
+  // 2. Syntax highlighting for common languages
+  const highlighted = highlightCode(text, cleanLang);
+  const displayLang = cleanLang || 'text';
+  const encodedRaw = encodeURIComponent(text);
+
+  return `
+<div class="code-block-card" data-language="${displayLang}">
+  <div class="code-block-header">
+    <div class="mac-dots">
+      <span class="mac-dot dot-red"></span>
+      <span class="mac-dot dot-yellow"></span>
+      <span class="mac-dot dot-green"></span>
+    </div>
+    <span class="code-block-lang">${displayLang}</span>
+    <button class="code-block-copy-btn" title="Copy code" data-copy-target="${encodedRaw}">
+      <span class="copy-icon">📋</span>
+      <span class="copy-text">Copy</span>
+    </button>
+  </div>
+  <pre><code class="language-${displayLang}">${highlighted}</code></pre>
+</div>`;
+};
+
+marked.use({ renderer });
 
 /**
  * Transforms [[wikilinks]] and [[relation:Target]] into preview spans
@@ -61,6 +103,25 @@ export function transformWikilinksToHtml(markdown: string): string {
     (_match, target) => {
       const cleanTarget = target.trim();
       return `<span class="wikilink-preview" data-target="${cleanTarget}"><span class="wikilink-name">${cleanTarget}</span></span>`;
+    }
+  );
+
+  // 5. KaTeX Math Equations: $$block$$ and $inline$
+  // Block Math ($$...$$)
+  transformed = transformed.replace(
+    /\$\$([\s\S]+?)\$\$/g,
+    (_match, equation) => {
+      const clean = equation.trim().replace(/"/g, '&quot;');
+      return `<div class="katex-render katex-block" data-math="${clean}"></div>`;
+    }
+  );
+
+  // Inline Math ($...$) - not matching empty or already escaped
+  transformed = transformed.replace(
+    /(^|[^\\])\$([^\$\n\r]+?)\$/g,
+    (_match, prefix, equation) => {
+      const clean = equation.trim().replace(/"/g, '&quot;');
+      return `${prefix}<span class="katex-render katex-inline" data-math="${clean}"></span>`;
     }
   );
 

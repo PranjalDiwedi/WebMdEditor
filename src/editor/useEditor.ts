@@ -5,6 +5,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
 import { Markdown } from 'tiptap-markdown';
+import { SmartPasteExtension } from './extensions/smartPaste';
 import { sanitizeFileContent } from '../utils/htmlSanitizer';
 import { normalizeMarkdown } from '../utils/markdownParser';
 import { useEffect, useRef } from 'react';
@@ -296,6 +297,7 @@ export function useEditor(
         transformPastedText: true,
         transformCopiedText: true,
       }),
+      SmartPasteExtension,
       createMarkdownShortcutsExtension(
         () => onSaveRef.current,
         () => onTriggerAIRef.current
