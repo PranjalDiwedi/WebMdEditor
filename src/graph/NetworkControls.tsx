@@ -13,6 +13,7 @@ interface NetworkControlsProps {
   onPhysicsChange: (physics: PhysicsConfig) => void;
   availableFolders: string[];
   availableTags: string[];
+  availableRelations?: string[];
   totalNodes: number;
   totalEdges: number;
   orphanCount: number;
@@ -26,6 +27,7 @@ export function NetworkControls({
   onPhysicsChange,
   availableFolders,
   availableTags,
+  availableRelations = [],
   totalNodes,
   totalEdges,
   orphanCount,
@@ -56,6 +58,14 @@ export function NetworkControls({
       ? filters.selectedTags.filter((t) => t !== tag)
       : [...filters.selectedTags, tag];
     updateFilters({ selectedTags: updated });
+  };
+
+  const toggleRelation = (relation: string) => {
+    const isSelected = filters.selectedRelations.includes(relation);
+    const updated = isSelected
+      ? filters.selectedRelations.filter((r) => r !== relation)
+      : [...filters.selectedRelations, relation];
+    updateFilters({ selectedRelations: updated });
   };
 
   return (
@@ -167,6 +177,14 @@ export function NetworkControls({
                   <label className="network-checkbox-label">
                     <input
                       type="checkbox"
+                      checked={filters.showEdgeLabels}
+                      onChange={(e) => updateFilters({ showEdgeLabels: e.target.checked })}
+                    />
+                    <span>🏷️ Show Relationship Labels on Edges</span>
+                  </label>
+                  <label className="network-checkbox-label">
+                    <input
+                      type="checkbox"
                       checked={filters.showGhostNotes}
                       onChange={(e) => updateFilters({ showGhostNotes: e.target.checked })}
                     />
@@ -221,6 +239,24 @@ export function NetworkControls({
                     <span>🏝️ Orphan Notes Only ({orphanCount} unlinked)</span>
                   </label>
                 </div>
+
+                {availableRelations.length > 0 && (
+                  <div className="network-field-group">
+                    <label className="network-field-label">Filter by Relationship Type</label>
+                    <div className="network-chip-list">
+                      {availableRelations.map((rel) => (
+                        <button
+                          key={rel}
+                          type="button"
+                          className={`network-chip ${filters.selectedRelations.includes(rel) ? 'active' : ''}`}
+                          onClick={() => toggleRelation(rel)}
+                        >
+                          🔗 {rel.replace(/_/g, ' ')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {availableFolders.length > 0 && (
                   <div className="network-field-group">

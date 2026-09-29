@@ -9,11 +9,21 @@ import type {
 import {
   buildGraphFromFiles,
   addWikilinkToContent,
+  updateWikilinkRelationInContent,
   removeWikilinkFromContent,
 } from './graphParser';
 import { extractLocalSubgraph } from './centrality';
 import { NetworkCanvas } from './NetworkCanvas';
 import { NetworkControls } from './NetworkControls';
+
+export const COMMON_RELATIONS = [
+  'depends_on',
+  'is_a',
+  'related_to',
+  'alternative_to',
+  'inspired_by',
+  'blocks',
+];
 
 interface NetworkViewProps {
   files: MarkdownFile[];
@@ -29,9 +39,11 @@ const DEFAULT_FILTERS: GraphFilterOptions = {
   searchQuery: '',
   selectedFolders: [],
   selectedTags: [],
+  selectedRelations: [],
   orphansOnly: false,
   showGhostNotes: true,
   showTagConnections: false,
+  showEdgeLabels: false,
   localGraphMode: false,
   localDepth: 1,
   sizingMode: 'betweenness',
@@ -62,6 +74,17 @@ export function NetworkView({
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   const [selectedEdgeCoords, setSelectedEdgeCoords] = useState<{ x: number; y: number } | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
+  // Creating new relationship via Shift + Drag
+  const [connectingEdgeData, setConnectingEdgeData] = useState<{
+    sourceNode: GraphNode;
+    targetNode: GraphNode;
+  } | null>(null);
+  const [newEdgeRelation, setNewEdgeRelation] = useState<string>('depends_on');
+
+  // Editing existing edge relationship
+  const [isEditingEdgeRelation, setIsEditingEdgeRelation] = useState(false);
+  const [editingRelationValue, setEditingRelationValue] = useState<string>('');
 
   const previousNodesRef = useRef<GraphNode[]>([]);
 
@@ -101,6 +124,7 @@ export function NetworkView({
       !filters.showGhostNotes ||
       filters.selectedFolders.length > 0 ||
       filters.selectedTags.length > 0 ||
+      filters.selectedRelations.length > 0 ||
       filters.orphansOnly ||
       (filters.localGraphMode && !!currentLocalFileId);
 
@@ -146,6 +170,12 @@ export function NetworkView({
       });
     }
 
+    // Filter by Relation Type
+    if (filters.selectedRelations.length > 0) {
+      const relSet = new Set(filters.selectedRelations);
+      edges = edges.filter((e) => e.relation && relSet.has(e.relation));
+    }
+
     // Filter Orphans
     if (filters.orphansOnly) {
       nodes = nodes.filter((n) => n.inDegree === 0 && n.outDegree === 0);
@@ -170,6 +200,7 @@ export function NetworkView({
     filters.showGhostNotes,
     filters.selectedFolders,
     filters.selectedTags,
+    filters.selectedRelations,
     filters.orphansOnly,
     filters.localGraphMode,
     filters.localDepth,
@@ -218,28 +249,43 @@ export function NetworkView({
     [onCreateDraft]
   );
 
-  // Shift + Drag: Connect Source Node -> Target Node with a standard [[Wikilink]]
+  // Shift + Drag: Prompt to Connect Source Node -> Target Node with a Typed Link
   const handleConnectNodes = useCallback(
-    async (sourceNode: GraphNode, targetNode: GraphNode) => {
+    (sourceNode: GraphNode, targetNode: GraphNode) => {
+      setConnectingEdgeData({ sourceNode, targetNode });
+      setNewEdgeRelation('depends_on');
+    },
+    []
+  );
+
+  const handleConfirmCreateEdge = useCallback(
+    async (relation?: string) => {
+      if (!connectingEdgeData) return;
+      const { sourceNode, targetNode } = connectingEdgeData;
       const sourceFile = files.find((f) => f.id === sourceNode.id);
       if (!sourceFile) return;
 
       const targetTitle = targetNode.name;
-      const updatedContent = addWikilinkToContent(sourceFile.content || '', targetTitle);
+      const cleanRel = relation?.trim();
+      const updatedContent = addWikilinkToContent(sourceFile.content || '', targetTitle, cleanRel);
 
       if (updatedContent === sourceFile.content) {
         setActionFeedback(`"${sourceNode.name}" is already linked to "${targetNode.name}"`);
         setTimeout(() => setActionFeedback(null), 2500);
+        setConnectingEdgeData(null);
         return;
       }
 
       if (onUpdateFileContent) {
         await onUpdateFileContent(sourceFile.id, updatedContent);
-        setActionFeedback(`✨ Linked "${sourceNode.name}" ➔ "${targetNode.name}"`);
+        const relLabel = cleanRel ? ` [${cleanRel}]` : '';
+        setActionFeedback(`✨ Linked "${sourceNode.name}" ➔ "${targetNode.name}"${relLabel}`);
         setTimeout(() => setActionFeedback(null), 3000);
       }
+
+      setConnectingEdgeData(null);
     },
-    [files, onUpdateFileContent]
+    [connectingEdgeData, files, onUpdateFileContent]
   );
 
   // Unlink: Remove link between source and target notes
@@ -265,12 +311,46 @@ export function NetworkView({
 
     setSelectedEdge(null);
     setSelectedEdgeCoords(null);
+    setIsEditingEdgeRelation(false);
   }, [selectedEdge, files, rawGraph.nodes, onUpdateFileContent]);
+
+  // Edit relation type of existing edge
+  const handleSaveEditedRelation = useCallback(
+    async (newRelation: string) => {
+      if (!selectedEdge) return;
+
+      const sourceId = typeof selectedEdge.source === 'object' ? selectedEdge.source.id : selectedEdge.source;
+      const targetName =
+        typeof selectedEdge.target === 'object'
+          ? selectedEdge.target.name
+          : rawGraph.nodes.find((n) => n.id === selectedEdge.target)?.name || '';
+
+      const sourceFile = files.find((f) => f.id === sourceId);
+      if (!sourceFile || !targetName) return;
+
+      const cleanRel = newRelation.trim();
+      const updatedContent = updateWikilinkRelationInContent(sourceFile.content || '', targetName, cleanRel);
+
+      if (onUpdateFileContent) {
+        await onUpdateFileContent(sourceFile.id, updatedContent);
+        const relLabel = cleanRel ? ` [${cleanRel}]` : ' (untyped)';
+        setActionFeedback(`✨ Updated relationship to${relLabel}: "${sourceFile.name}" ➔ "${targetName}"`);
+        setTimeout(() => setActionFeedback(null), 3000);
+      }
+
+      setIsEditingEdgeRelation(false);
+      setSelectedEdge(null);
+      setSelectedEdgeCoords(null);
+    },
+    [selectedEdge, files, rawGraph.nodes, onUpdateFileContent]
+  );
 
   const handleSelectEdge = useCallback(
     (edge: GraphEdge | null, coords: { x: number; y: number } | null) => {
       setSelectedEdge(edge);
       setSelectedEdgeCoords(coords);
+      setIsEditingEdgeRelation(false);
+      setEditingRelationValue(edge?.relation || '');
     },
     []
   );
@@ -403,19 +483,20 @@ export function NetworkView({
           onPhysicsChange={setPhysics}
           availableFolders={rawGraph.folders}
           availableTags={rawGraph.tags}
+          availableRelations={rawGraph.relations || []}
           totalNodes={stats.totalNotes}
           totalEdges={stats.totalLinks}
           orphanCount={stats.orphanCount}
           bridgeNoteCount={stats.bridgeNoteCount}
         />
 
-        {/* Floating Edge Action Card (Click Edge to Unlink) */}
+        {/* Floating Edge Action Card (Click Edge to View / Edit / Unlink) */}
         {selectedEdge && selectedEdgeCoords && selectedEdgeDetails && (
           <div
-            className="network-edge-action-card"
+            className={`network-edge-action-card ${isEditingEdgeRelation ? 'editing-mode' : ''}`}
             style={{
-              left: Math.min(window.innerWidth - 290, Math.max(16, selectedEdgeCoords.x - 120)),
-              top: Math.min(window.innerHeight - 130, Math.max(70, selectedEdgeCoords.y - 45)),
+              left: Math.min(window.innerWidth - 320, Math.max(16, selectedEdgeCoords.x - 140)),
+              top: Math.min(window.innerHeight - 240, Math.max(70, selectedEdgeCoords.y - 45)),
             }}
           >
             <div className="network-edge-card-header">
@@ -430,23 +511,196 @@ export function NetworkView({
                 onClick={() => {
                   setSelectedEdge(null);
                   setSelectedEdgeCoords(null);
+                  setIsEditingEdgeRelation(false);
                 }}
               >
                 ✕
               </button>
             </div>
-            <div className="network-edge-card-actions">
-              <span className="network-edge-badge">
-                {selectedEdge.type === 'tag' ? '#tag link' : '[[wikilink]]'}
-              </span>
-              <button
-                type="button"
-                className="network-edge-unlink-btn"
-                onClick={handleDeleteSelectedEdge}
-                title="Remove this connection from the markdown file"
-              >
-                🗑️ Remove Link
-              </button>
+
+            {!isEditingEdgeRelation ? (
+              <div className="network-edge-card-actions">
+                <span className="network-edge-badge">
+                  {selectedEdge.relation
+                    ? `[ ${selectedEdge.relation} ]`
+                    : selectedEdge.type === 'tag'
+                    ? '#tag link'
+                    : '[[untyped link]]'}
+                </span>
+                <div className="edge-action-btns">
+                  {selectedEdge.type !== 'tag' && (
+                    <button
+                      type="button"
+                      className="network-edge-edit-btn"
+                      onClick={() => {
+                        setEditingRelationValue(selectedEdge.relation || '');
+                        setIsEditingEdgeRelation(true);
+                      }}
+                      title="Edit relationship type"
+                    >
+                      ✏️ Edit
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="network-edge-unlink-btn"
+                    onClick={handleDeleteSelectedEdge}
+                    title="Remove this connection from the markdown file"
+                  >
+                    🗑️ Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="network-edge-edit-section">
+                <div className="network-edge-preset-chips">
+                  <button
+                    type="button"
+                    className={`edge-rel-chip ${!editingRelationValue ? 'active' : ''}`}
+                    onClick={() => setEditingRelationValue('')}
+                  >
+                    (untyped)
+                  </button>
+                  {COMMON_RELATIONS.map((rel) => (
+                    <button
+                      key={rel}
+                      type="button"
+                      className={`edge-rel-chip chip-${rel} ${editingRelationValue === rel ? 'active' : ''}`}
+                      onClick={() => setEditingRelationValue(rel)}
+                    >
+                      {rel}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="network-edge-custom-input-row">
+                  <input
+                    type="text"
+                    placeholder="Custom relation..."
+                    value={editingRelationValue}
+                    onChange={(e) => setEditingRelationValue(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSaveEditedRelation(editingRelationValue);
+                      } else if (e.key === 'Escape') {
+                        setIsEditingEdgeRelation(false);
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <div className="network-edge-edit-buttons">
+                    <button
+                      type="button"
+                      className="edge-cancel-btn"
+                      onClick={() => setIsEditingEdgeRelation(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="edge-save-btn"
+                      onClick={() => handleSaveEditedRelation(editingRelationValue)}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Modal: Create Relationship Link on Shift + Drag Connection */}
+        {connectingEdgeData && (
+          <div className="network-modal-backdrop" onClick={() => setConnectingEdgeData(null)}>
+            <div className="network-relation-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="network-modal-header">
+                <div className="network-modal-title-cluster">
+                  <span className="network-modal-icon">🔗</span>
+                  <div className="network-modal-titles">
+                    <h3>Create Note Relationship</h3>
+                    <p className="network-modal-subtitle">
+                      <strong>{connectingEdgeData.sourceNode.name}</strong> ➔ <strong>{connectingEdgeData.targetNode.name}</strong>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="network-modal-close"
+                  onClick={() => setConnectingEdgeData(null)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="network-modal-body">
+                <label className="network-modal-label">Choose Relationship Type:</label>
+                <div className="network-relation-presets">
+                  <button
+                    type="button"
+                    className={`preset-chip ${!newEdgeRelation ? 'active' : ''}`}
+                    onClick={() => setNewEdgeRelation('')}
+                  >
+                    📄 (Standard Link)
+                  </button>
+                  {COMMON_RELATIONS.map((rel) => (
+                    <button
+                      key={rel}
+                      type="button"
+                      className={`preset-chip chip-${rel} ${newEdgeRelation === rel ? 'active' : ''}`}
+                      onClick={() => setNewEdgeRelation(rel)}
+                    >
+                      {rel}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="network-modal-custom-input">
+                  <label className="network-modal-label">Or Custom Relation Type:</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. parent_of, authored_by, implements..."
+                    value={newEdgeRelation}
+                    onChange={(e) => setNewEdgeRelation(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleConfirmCreateEdge(newEdgeRelation);
+                      } else if (e.key === 'Escape') {
+                        setConnectingEdgeData(null);
+                      }
+                    }}
+                    autoFocus
+                  />
+                </div>
+
+                <div className="network-relation-preview-box">
+                  <span className="preview-label">Generated Wikilink:</span>
+                  <code>
+                    {newEdgeRelation
+                      ? `[[${newEdgeRelation}:${connectingEdgeData.targetNode.name.replace(/\.md$/i, '')}]]`
+                      : `[[${connectingEdgeData.targetNode.name.replace(/\.md$/i, '')}]]`}
+                  </code>
+                </div>
+              </div>
+
+              <div className="network-modal-footer">
+                <button
+                  type="button"
+                  className="network-btn-secondary"
+                  onClick={() => setConnectingEdgeData(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="network-btn-primary"
+                  onClick={() => handleConfirmCreateEdge(newEdgeRelation)}
+                >
+                  Create Connection
+                </button>
+              </div>
             </div>
           </div>
         )}

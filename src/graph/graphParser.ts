@@ -86,11 +86,13 @@ interface ParsedLink {
   raw: string;
   target: string;
   alias?: string;
+  relation?: string;
   type: 'wikilink' | 'markdown';
 }
 
 /**
- * Extracts both Obsidian Wikilinks [[Target|Alias]] and Standard Markdown links [text](target.md)
+ * Extracts both Obsidian Wikilinks [[Target|Alias]], Typed Links [[relation:Target|Alias]],
+ * and Standard Markdown links [text](target.md).
  * Robust to both unescaped and escaped bracket syntax (e.g. \[\[Target\]\] from markdown serializers).
  */
 export function extractLinksFromContent(content: string): ParsedLink[] {
@@ -98,9 +100,9 @@ export function extractLinksFromContent(content: string): ParsedLink[] {
   if (!content) return links;
 
   // Unescape backslashed markdown brackets and pipes: \[\[ -> [[, \]\] -> ]], \| -> |
-  const unescapedContent = content.replace(/\\([\[\]|])/g, '$1');
+  const unescapedContent = content.replace(/\\([[\]|])/g, '$1');
 
-  // 1. Wikilinks [[Note Name]], [[Note Name|Alias]], [[Folder/Note#Heading]]
+  // 1. Wikilinks [[Note Name]], [[relation:Note Name]], [[Note Name|Alias]], [[relation:Note|Alias]]
   const wikilinkRegex = /\[\[([^\]\r\n]+)\]\]/g;
   let match: RegExpExecArray | null;
 
@@ -108,6 +110,7 @@ export function extractLinksFromContent(content: string): ParsedLink[] {
     const rawInner = match[1].trim();
     let target = rawInner;
     let alias: string | undefined;
+    let relation: string | undefined;
 
     if (rawInner.includes('|')) {
       const parts = rawInner.split('|');
@@ -115,11 +118,24 @@ export function extractLinksFromContent(content: string): ParsedLink[] {
       alias = parts.slice(1).join('|').trim();
     }
 
+    // Check for typed link relation prefix: [[relation:Target Note]]
+    const colonIdx = target.indexOf(':');
+    if (colonIdx > 0 && colonIdx < target.length - 1) {
+      const potentialRelation = target.substring(0, colonIdx).trim();
+      const potentialTarget = target.substring(colonIdx + 1).trim();
+      // Ensure potentialRelation is an identifier (letters, digits, underscores, hyphens)
+      if (/^[a-zA-Z][a-zA-Z0-9_\- ]*$/.test(potentialRelation) && potentialTarget.length > 0) {
+        relation = potentialRelation.toLowerCase().replace(/\s+/g, '_');
+        target = potentialTarget;
+      }
+    }
+
     if (target) {
       links.push({
         raw: match[0],
         target,
         alias,
+        relation,
         type: 'wikilink',
       });
     }
@@ -175,6 +191,7 @@ export function buildGraphFromFiles(
   const normalizedToNodeId = new Map<string, string>();
   const allTagsSet = new Set<string>();
   const allFoldersSet = new Set<string>();
+  const allRelationsSet = new Set<string>();
 
   // Cache existing positions so nodes never jump or explode on updates
   const existingPosMap = new Map<
@@ -298,12 +315,16 @@ export function buildGraphFromFiles(
       const edgeKey = `${sourceNode.id}->${targetNodeId}`;
       if (!edgeSet.has(edgeKey)) {
         edgeSet.add(edgeKey);
+        if (link.relation) {
+          allRelationsSet.add(link.relation);
+        }
         edges.push({
           id: edgeKey,
           source: sourceNode.id,
           target: targetNodeId,
           type: link.type,
           label: link.alias,
+          relation: link.relation,
         });
 
         // Update raw in/out degrees
@@ -359,6 +380,7 @@ export function buildGraphFromFiles(
     edges,
     tags: Array.from(allTagsSet).sort(),
     folders: Array.from(allFoldersSet).sort(),
+    relations: Array.from(allRelationsSet).sort(),
     maxBetweenness,
     maxInDegree,
   };
@@ -369,21 +391,20 @@ function escapeRegExp(string: string): string {
 }
 
 /**
- * Smartly appends a [[Target Note]] wikilink to markdown content.
+ * Smartly appends a [[Target Note]] or [[relation:Target Note]] wikilink to markdown content.
  * Checks for existing "## Related Notes" or "## Links" section or appends cleanly.
  */
-export function addWikilinkToContent(content: string, targetNoteName: string): string {
-  const cleanTarget = targetNoteName.replace(/\.md$/i, '');
-  const linkText = `[[${cleanTarget}]]`;
-  const unescaped = content.replace(/\\([\[\]|])/g, '$1');
+export function addWikilinkToContent(content: string, targetNoteName: string, relation?: string): string {
+  const cleanTarget = targetNoteName.replace(/\.md$/i, '').trim();
+  const cleanRel = relation ? relation.trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '_') : '';
+  const linkText = cleanRel ? `[[${cleanRel}:${cleanTarget}]]` : `[[${cleanTarget}]]`;
+  const unescaped = content.replace(/\\([[\]|])/g, '$1');
 
-  // Check if link already exists
-  if (
-    unescaped.includes(`[[${cleanTarget}]]`) ||
-    unescaped.includes(`[[${cleanTarget}|`) ||
-    unescaped.toLowerCase().includes(`[[${cleanTarget.toLowerCase()}]]`)
-  ) {
-    return content;
+  // If link already exists, update its relation instead
+  const esc = escapeRegExp(cleanTarget);
+  const existingRegex = new RegExp(`\\[\\[(?:[a-zA-Z0-9_\\- ]+:)?${esc}(?:\\|[^\\]]*)?\\]\\]`, 'i');
+  if (existingRegex.test(unescaped)) {
+    return updateWikilinkRelationInContent(content, cleanTarget, cleanRel);
   }
 
   // Check for existing "## Related Notes" or "## Related" or "## Links" section
@@ -404,6 +425,49 @@ export function addWikilinkToContent(content: string, targetNoteName: string): s
 }
 
 /**
+ * Updates an existing wikilink's relation type in note content (e.g. [[Target]] -> [[depends_on:Target]]).
+ */
+export function updateWikilinkRelationInContent(
+  content: string,
+  targetNoteName: string,
+  newRelation?: string
+): string {
+  const cleanTarget = targetNoteName.replace(/\.md$/i, '').trim();
+  const cleanRel = newRelation ? newRelation.trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '_') : '';
+  const esc = escapeRegExp(cleanTarget);
+
+  let replaced = false;
+
+  // 1. Match unescaped wikilinks: [[old_rel:Target|Alias]] or [[Target|Alias]] or [[Target]]
+  const unescapedRegex = new RegExp(`\\[\\[(?:[a-zA-Z0-9_\\-]+:)?(${esc})(\\|[^\\]]+)?\\]\\]`, 'g');
+  let updated = content.replace(unescapedRegex, (_match, target, alias) => {
+    replaced = true;
+    const aliasPart = alias || '';
+    return cleanRel ? `[[${cleanRel}:${target}${aliasPart}]]` : `[[${target}${aliasPart}]]`;
+  });
+
+  // 2. Match backslash-escaped wikilinks if present
+  const escapedRegex = new RegExp(`\\\\\\[\\\\\\[(?:[a-zA-Z0-9_\\-]+:)?(${esc})(\\\\|[^\\]]+)?\\\\\\]\\\\\\]`, 'g');
+  updated = updated.replace(escapedRegex, (_match, target, alias) => {
+    replaced = true;
+    const aliasPart = alias || '';
+    return cleanRel ? `[[${cleanRel}:${target}${aliasPart}]]` : `[[${target}${aliasPart}]]`;
+  });
+
+  // If not found in note, append it
+  if (!replaced) {
+    const linkText = cleanRel ? `[[${cleanRel}:${cleanTarget}]]` : `[[${cleanTarget}]]`;
+    const trimmed = content.trimEnd();
+    if (!trimmed) {
+      return `## Related Notes\n- ${linkText}\n`;
+    }
+    return `${trimmed}\n\n---\n\n## Related Notes\n- ${linkText}\n`;
+  }
+
+  return updated;
+}
+
+/**
  * Cleanly removes a wikilink or markdown link from note content.
  */
 export function removeWikilinkFromContent(content: string, targetNoteName: string): string {
@@ -412,21 +476,21 @@ export function removeWikilinkFromContent(content: string, targetNoteName: strin
 
   let updated = content;
 
-  // 1. Remove bullet list line: "- [[Target]]" or "* [[Target]]" or "- \[\[Target\]\]"
-  const bulletRegex = new RegExp(`^[\\t ]*[-*+]\\s*(?:\\[|\n|\r|\\\\)*\\[\\[${esc}(?:\\|[^\\]]*)?\\]\\]\\s*\\n?`, 'gmi');
+  // 1. Remove bullet list line: "- [[Target]]" or "- [[relation:Target]]" or "* [[Target]]" or "- \[\[Target\]\]"
+  const bulletRegex = new RegExp(`^[\\t ]*[-*+]\\s*(?:\\[|\n|\r|\\\\)*\\[\\[(?:[a-zA-Z0-9_\\- ]+:)?${esc}(?:\\|[^\\]]*)?\\]\\]\\s*\\n?`, 'gmi');
   updated = updated.replace(bulletRegex, '');
 
-  const escapedBulletRegex = new RegExp(`^[\\t ]*[-*+]\\s*\\\\\\[\\\\\\[${esc}(?:\\\\\\|[^\\]]*)?\\\\\\]\\\\\\]\\s*\\n?`, 'gmi');
+  const escapedBulletRegex = new RegExp(`^[\\t ]*[-*+]\\s*\\\\\\[\\\\\\[(?:[a-zA-Z0-9_\\- ]+:)?${esc}(?:\\\\\\|[^\\]]*)?\\\\\\]\\\\\\]\\s*\\n?`, 'gmi');
   updated = updated.replace(escapedBulletRegex, '');
 
   const mdBulletRegex = new RegExp(`^[\\t ]*[-*+]\\s*\\[[^\\]]*\\]\\([^)]*${esc}\\.md(?:#[^)]*)?\\)\\s*\\n?`, 'gmi');
   updated = updated.replace(mdBulletRegex, '');
 
-  // 2. Remove inline wikilink "[[Target]]" or "\[\[Target\]\]"
-  const inlineRegex = new RegExp(`\\[\\[${esc}(?:\\|[^\\]]*)?\\]\\]`, 'gi');
+  // 2. Remove inline wikilink "[[Target]]" or "[[relation:Target]]" or "\[\[Target\]\]"
+  const inlineRegex = new RegExp(`\\[\\[(?:[a-zA-Z0-9_\\- ]+:)?${esc}(?:\\|[^\\]]*)?\\]\\]`, 'gi');
   updated = updated.replace(inlineRegex, '');
 
-  const escapedInlineRegex = new RegExp(`\\\\\\[\\\\\\[${esc}(?:\\\\\\|[^\\]]*)?\\\\\\]\\\\\\]`, 'gi');
+  const escapedInlineRegex = new RegExp(`\\\\\\[\\\\\\[(?:[a-zA-Z0-9_\\- ]+:)?${esc}(?:\\\\\\|[^\\]]*)?\\\\\\]\\\\\\]`, 'gi');
   updated = updated.replace(escapedInlineRegex, '');
 
   // 3. Clean up empty "## Related Notes" header if no items remain

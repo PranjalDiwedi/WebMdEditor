@@ -27,6 +27,7 @@ export interface GraphEdge extends SimulationLinkDatum<GraphNode> {
   target: string | GraphNode;
   type: 'wikilink' | 'markdown' | 'tag' | 'folder';
   label?: string;
+  relation?: string; // Semantic relation name (e.g., "depends_on", "is_a", "alternative_to")
   isHighlighted?: boolean;
   isDimmed?: boolean;
 }
@@ -36,6 +37,7 @@ export interface GraphData {
   edges: GraphEdge[];
   tags: string[];
   folders: string[];
+  relations: string[]; // List of all unique relationship types found in the vault
   maxBetweenness: number;
   maxInDegree: number;
 }
@@ -47,9 +49,11 @@ export interface GraphFilterOptions {
   searchQuery: string;
   selectedFolders: string[];
   selectedTags: string[];
+  selectedRelations: string[];
   orphansOnly: boolean;
   showGhostNotes: boolean;
   showTagConnections: boolean;
+  showEdgeLabels: boolean;
   localGraphMode: boolean;
   localDepth: number; // 1, 2, or 3 hops
   sizingMode: NodeSizingMode;

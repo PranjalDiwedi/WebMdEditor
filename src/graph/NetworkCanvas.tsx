@@ -64,6 +64,24 @@ function getCentralityColor(betweenness: number): string {
   return '#64748b'; // Slate
 }
 
+export function getRelationColor(relation?: string, isDark: boolean = true): string {
+  if (!relation) return isDark ? '#64748b' : '#94a3b8';
+  const r = relation.toLowerCase();
+  if (r.includes('depend') || r.includes('block') || r.includes('require')) {
+    return isDark ? '#fb923c' : '#ea580c'; // Orange / Amber
+  }
+  if (r.includes('is_a') || r.includes('type') || r.includes('subclass') || r.includes('parent')) {
+    return isDark ? '#38bdf8' : '#0284c7'; // Cyan / Sky Blue
+  }
+  if (r.includes('alt') || r.includes('similar') || r.includes('compare')) {
+    return isDark ? '#34d399' : '#059669'; // Emerald / Teal
+  }
+  if (r.includes('inspire') || r.includes('author') || r.includes('source') || r.includes('ref')) {
+    return isDark ? '#c084fc' : '#9333ea'; // Purple
+  }
+  return isDark ? '#818cf8' : '#4f46e5'; // Indigo default
+}
+
 // Helper: Distance squared from point to line segment
 function distToSegmentSquared(
   p: { x: number; y: number },
@@ -204,6 +222,8 @@ export function NetworkCanvas({
     return set;
   }, [hoveredNode, selectedNode, edges]);
 
+  const hoveredEdgeRef = useRef<GraphEdge | null>(null);
+
   // Keep a stable ref for all rendering data so the simulation doesn't thrash on hover
   const renderStateRef = useRef({
     nodes,
@@ -306,6 +326,10 @@ export function NetworkCanvas({
       }
 
       const isEdgeSelected = currentSelectedEdge?.id === edge.id;
+      const isEdgeHovered = hoveredEdgeRef.current?.id === edge.id;
+      const isConnectedNodeHovered = currentHovered
+        ? source.id === currentHovered.id || target.id === currentHovered.id
+        : false;
       const isConnectedToFocus = currentNeighbors
         ? currentNeighbors.has(source.id) && currentNeighbors.has(target.id)
         : false;
@@ -319,10 +343,15 @@ export function NetworkCanvas({
         ctx.lineWidth = 3.2 / k;
         ctx.globalAlpha = 1.0;
         ctx.setLineDash([]);
-      } else if (isConnectedToFocus) {
-        ctx.strokeStyle = isDark ? '#60a5fa' : '#2563eb';
-        ctx.lineWidth = 2.2 / k;
-        ctx.globalAlpha = 0.9;
+      } else if (isEdgeHovered) {
+        ctx.strokeStyle = edge.relation ? getRelationColor(edge.relation, isDark) : (isDark ? '#38bdf8' : '#0284c7');
+        ctx.lineWidth = 2.8 / k;
+        ctx.globalAlpha = 1.0;
+        ctx.setLineDash([]);
+      } else if (isConnectedNodeHovered || isConnectedToFocus) {
+        ctx.strokeStyle = edge.relation ? getRelationColor(edge.relation, isDark) : (isDark ? '#60a5fa' : '#2563eb');
+        ctx.lineWidth = 2.4 / k;
+        ctx.globalAlpha = 0.95;
         ctx.setLineDash([]);
       } else if (hasFocus) {
         ctx.strokeStyle = isDark ? '#334155' : '#e2e8f0';
@@ -334,6 +363,11 @@ export function NetworkCanvas({
         ctx.lineWidth = 1 / k;
         ctx.globalAlpha = 0.35;
         ctx.setLineDash([3 / k, 3 / k]);
+      } else if (edge.relation) {
+        ctx.strokeStyle = getRelationColor(edge.relation, isDark);
+        ctx.lineWidth = 1.6 / k;
+        ctx.globalAlpha = isDark ? 0.75 : 0.85;
+        ctx.setLineDash([]);
       } else {
         ctx.strokeStyle = isDark ? '#475569' : '#cbd5e1';
         ctx.lineWidth = 1.2 / k;
@@ -354,7 +388,7 @@ export function NetworkCanvas({
           const arrowX = target.x - (dx / dist) * arrowDist;
           const arrowY = target.y - (dy / dist) * arrowDist;
           const angle = Math.atan2(dy, dx);
-          const arrowSize = isEdgeSelected ? 5 / k : 4 / k;
+          const arrowSize = isEdgeSelected || isEdgeHovered ? 5 / k : 4 / k;
 
           ctx.save();
           ctx.translate(arrowX, arrowY);
@@ -368,6 +402,54 @@ export function NetworkCanvas({
           ctx.fill();
           ctx.restore();
         }
+      }
+
+      // Draw relation pill along edge on hover, selection, focus, or when explicit setting is enabled
+      const showLabelForEdge = edge.relation && (
+        currentFilters.showEdgeLabels ||
+        isEdgeSelected ||
+        isEdgeHovered ||
+        isConnectedNodeHovered ||
+        isConnectedToFocus
+      );
+
+      const isDimmedEdge = hasFocus && !isConnectedToFocus && !isEdgeSelected && !isEdgeHovered && !isConnectedNodeHovered;
+
+      if (showLabelForEdge && !isDimmedEdge && k > 0.35 && edge.relation) {
+        const midX = (source.x + target.x) / 2;
+        const midY = (source.y + target.y) / 2;
+        const relText = edge.relation;
+        const relFontSize = Math.max(8, Math.min(10, 9 / Math.sqrt(k)));
+
+        ctx.save();
+        ctx.font = `600 ${relFontSize}px Inter, -apple-system, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const metrics = ctx.measureText(relText);
+        const padX = 4;
+        const padY = 2;
+        const boxW = metrics.width + padX * 2;
+        const boxH = relFontSize + padY * 2;
+        const rx = midX - boxW / 2;
+        const ry = midY - boxH / 2;
+
+        ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.95)';
+        ctx.strokeStyle = getRelationColor(edge.relation, isDark);
+        ctx.lineWidth = isEdgeHovered || isEdgeSelected ? 1.5 : 1;
+
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === 'function') {
+          (ctx as any).roundRect(rx, ry, boxW, boxH, 3);
+        } else {
+          ctx.rect(rx, ry, boxW, boxH);
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isDark ? '#f8fafc' : '#0f172a';
+        ctx.fillText(relText, midX, midY);
+        ctx.restore();
       }
     }
 
@@ -816,17 +898,30 @@ export function NetworkCanvas({
       // Hover check without shaking the simulation
       const hitNode = findNodeAt(gx, gy);
       if (hitNode) {
+        if (hoveredEdgeRef.current) {
+          hoveredEdgeRef.current = null;
+          requestRedraw();
+        }
         onHoverNode(hitNode, { x: e.clientX, y: e.clientY });
         if (canvasRef.current) canvasRef.current.style.cursor = 'pointer';
         return;
       }
 
       // Edge hover check
-      const hitEdge = findEdgeAt(gx, gy, 6 / transformRef.current.k);
+      const hitEdge = findEdgeAt(gx, gy, 8 / transformRef.current.k);
       if (hitEdge) {
+        if (hoveredEdgeRef.current?.id !== hitEdge.id) {
+          hoveredEdgeRef.current = hitEdge;
+          requestRedraw();
+        }
         onHoverNode(null, null);
         if (canvasRef.current) canvasRef.current.style.cursor = 'pointer';
         return;
+      }
+
+      if (hoveredEdgeRef.current) {
+        hoveredEdgeRef.current = null;
+        requestRedraw();
       }
 
       onHoverNode(null, null);

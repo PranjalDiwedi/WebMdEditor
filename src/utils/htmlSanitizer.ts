@@ -6,14 +6,66 @@ const purifyConfig = {
     'p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre',
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
     'ul', 'ol', 'li', 'blockquote', 'a', 'hr',
-    'table', 'thead', 'tbody', 'tr', 'th', 'td'
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'span'
   ],
-  ALLOWED_ATTR: ['href', 'title', 'class', 'target', 'rel'],
-  ALLOW_DATA_ATTR: false,
+  ALLOWED_ATTR: ['href', 'title', 'class', 'target', 'rel', 'data-target', 'data-relation'],
+  ALLOW_DATA_ATTR: true,
   FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
   FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onmouseout', 'onfocus', 'onblur'],
   ADD_ATTR: ['target', 'rel'],
 };
+
+/**
+ * Transforms [[wikilinks]] and [[relation:Target]] into preview spans
+ */
+export function transformWikilinksToHtml(markdown: string): string {
+  if (!markdown) return '';
+
+  // 1. Typed links with alias: [[relation:Target|Alias]]
+  let transformed = markdown.replace(
+    /\[\[(?!https?:\/\/)([a-zA-Z0-9_\-]+):([^\]|\r\n]+)\|([^\]\r\n]+)\]\]/g,
+    (_match, relation, target, alias) => {
+      const cleanRel = relation.trim();
+      const cleanTarget = target.trim();
+      const cleanAlias = alias.trim();
+      const badgeClass = `relation-badge badge-${cleanRel.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+      return `<span class="wikilink-preview typed-link" data-relation="${cleanRel}" data-target="${cleanTarget}"><span class="${badgeClass}">${cleanRel}</span> <span class="wikilink-name">${cleanAlias}</span></span>`;
+    }
+  );
+
+  // 2. Typed links without alias: [[relation:Target]]
+  transformed = transformed.replace(
+    /\[\[(?!https?:\/\/)([a-zA-Z0-9_\-]+):([^\]|\r\n]+)\]\]/g,
+    (_match, relation, target) => {
+      const cleanRel = relation.trim();
+      const cleanTarget = target.trim();
+      const badgeClass = `relation-badge badge-${cleanRel.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+      return `<span class="wikilink-preview typed-link" data-relation="${cleanRel}" data-target="${cleanTarget}"><span class="${badgeClass}">${cleanRel}</span> <span class="wikilink-name">${cleanTarget}</span></span>`;
+    }
+  );
+
+  // 3. Standard wikilinks with alias: [[Target|Alias]]
+  transformed = transformed.replace(
+    /\[\[([^\]|\r\n]+)\|([^\]\r\n]+)\]\]/g,
+    (_match, target, alias) => {
+      const cleanTarget = target.trim();
+      const cleanAlias = alias.trim();
+      return `<span class="wikilink-preview" data-target="${cleanTarget}"><span class="wikilink-name">${cleanAlias}</span></span>`;
+    }
+  );
+
+  // 4. Standard wikilinks without alias: [[Target]]
+  transformed = transformed.replace(
+    /\[\[([^\]\r\n]+)\]\]/g,
+    (_match, target) => {
+      const cleanTarget = target.trim();
+      return `<span class="wikilink-preview" data-target="${cleanTarget}"><span class="wikilink-name">${cleanTarget}</span></span>`;
+    }
+  );
+
+  return transformed;
+}
 
 /**
  * Sanitizes HTML content to prevent XSS attacks
@@ -42,7 +94,8 @@ export function sanitizeHTML(html: string): string {
  */
 export function sanitizeMarkdown(markdown: string): string {
   try {
-    const html = marked.parse(markdown) as string;
+    const preprocessed = transformWikilinksToHtml(markdown);
+    const html = marked.parse(preprocessed) as string;
     return sanitizeHTML(html);
   } catch (error) {
     console.error('Markdown sanitization failed:', error);

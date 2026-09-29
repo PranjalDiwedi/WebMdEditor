@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { EditorContent, type Editor } from '@tiptap/react';
 import { useEditor, type WikilinkQueryState } from './useEditor';
 import { EditorToolbar } from './EditorToolbar';
@@ -20,6 +20,7 @@ interface TipTapEditorProps {
   viewMode?: ViewMode;
   vaultFiles?: MarkdownFile[];
   currentFileId?: string;
+  onOpenFileByName?: (name: string) => void;
 }
 
 export function TipTapEditor({
@@ -33,14 +34,30 @@ export function TipTapEditor({
   viewMode = 'edit',
   vaultFiles = [],
   currentFileId,
+  onOpenFileByName,
 }: TipTapEditorProps) {
+  const editorRef = useRef<any>(null);
   const [wikilinkQuery, setWikilinkQuery] = useState<WikilinkQueryState | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Filter matching files in vault based on typed wikilink query
+  // Parse relation prefix and note query from wikilink query (e.g. "depends_on:React" -> prefix: "depends_on", note: "React")
+  const { relationPrefix, noteQuery } = useMemo(() => {
+    if (!wikilinkQuery) return { relationPrefix: '', noteQuery: '' };
+    const raw = wikilinkQuery.query;
+    const colonIdx = raw.indexOf(':');
+    if (colonIdx !== -1) {
+      return {
+        relationPrefix: raw.substring(0, colonIdx).trim(),
+        noteQuery: raw.substring(colonIdx + 1).trim(),
+      };
+    }
+    return { relationPrefix: '', noteQuery: raw.trim() };
+  }, [wikilinkQuery]);
+
+  // Filter matching files in vault based on noteQuery
   const matchingFiles = useMemo(() => {
     if (!wikilinkQuery || !wikilinkQuery.isOpen) return [];
-    const q = wikilinkQuery.query.toLowerCase().trim();
+    const q = noteQuery.toLowerCase();
     return vaultFiles
       .filter((f) => f.id !== currentFileId)
       .filter((f) => {
@@ -50,17 +67,17 @@ export function TipTapEditor({
         return cleanName.includes(q) || path.includes(q);
       })
       .slice(0, 8); // Top 8 results for ultra-fast rendering
-  }, [wikilinkQuery, vaultFiles, currentFileId]);
+  }, [wikilinkQuery, noteQuery, vaultFiles, currentFileId]);
 
   const hasExactMatch = useMemo(() => {
     if (!wikilinkQuery) return false;
-    const q = wikilinkQuery.query.toLowerCase().trim();
+    const q = noteQuery.toLowerCase();
     return matchingFiles.some(
       (f) => f.name.replace(/\.md$/i, '').toLowerCase() === q
     );
-  }, [wikilinkQuery, matchingFiles]);
+  }, [wikilinkQuery, noteQuery, matchingFiles]);
 
-  const totalOptions = matchingFiles.length + (wikilinkQuery?.query.trim() && !hasExactMatch ? 1 : 0);
+  const totalOptions = matchingFiles.length + (noteQuery && !hasExactMatch ? 1 : 0);
 
   const handleWikilinkQueryChange = useCallback((state: WikilinkQueryState | null) => {
     setWikilinkQuery(state);
@@ -68,13 +85,15 @@ export function TipTapEditor({
   }, []);
 
   const handleInsertWikilink = useCallback(
-    (targetName: string, editorInstance: any) => {
-      if (!wikilinkQuery || !editorInstance) return;
+    (targetName: string, editorInstance?: any) => {
+      const ed = editorInstance || editorRef.current;
+      if (!wikilinkQuery || !ed) return;
       const clean = targetName.replace(/\.md$/i, '').trim();
-      const insertText = `[[${clean}]] `;
+      const insertText = relationPrefix
+        ? `[[${relationPrefix}:${clean}]] `
+        : `[[${clean}]] `;
 
-      editorInstance
-        .chain()
+      ed.chain()
         .focus()
         .insertContentAt(
           { from: wikilinkQuery.range.from, to: wikilinkQuery.range.to },
@@ -84,7 +103,24 @@ export function TipTapEditor({
 
       setWikilinkQuery(null);
     },
-    [wikilinkQuery]
+    [wikilinkQuery, relationPrefix]
+  );
+
+  const handleSelectRelationPrefix = useCallback(
+    (prefix: string) => {
+      const ed = editorRef.current;
+      if (!wikilinkQuery || !ed) return;
+      const targetQuery = noteQuery ? `${prefix}:${noteQuery}` : `${prefix}:`;
+      const insertText = `[[${targetQuery}`;
+      ed.chain()
+        .focus()
+        .insertContentAt(
+          { from: wikilinkQuery.range.from, to: wikilinkQuery.range.to },
+          insertText
+        )
+        .run();
+    },
+    [wikilinkQuery, noteQuery]
   );
 
   const handleKeyDownInterceptor = useCallback(
@@ -108,9 +144,9 @@ export function TipTapEditor({
       if (event.key === 'Enter' || event.key === 'Tab') {
         event.preventDefault();
         if (selectedIndex < matchingFiles.length) {
-          handleInsertWikilink(matchingFiles[selectedIndex].name, editor);
-        } else if (wikilinkQuery.query.trim()) {
-          handleInsertWikilink(wikilinkQuery.query.trim(), editor);
+          handleInsertWikilink(matchingFiles[selectedIndex].name);
+        } else if (noteQuery) {
+          handleInsertWikilink(noteQuery);
         }
         return true;
       }
@@ -123,7 +159,7 @@ export function TipTapEditor({
 
       return false;
     },
-    [wikilinkQuery, totalOptions, selectedIndex, matchingFiles, handleInsertWikilink]
+    [wikilinkQuery, totalOptions, selectedIndex, matchingFiles, noteQuery, handleInsertWikilink]
   );
 
   const { setIsInlineMenuOpen } = useAI();
@@ -141,6 +177,7 @@ export function TipTapEditor({
     handleKeyDownInterceptor,
     handleOpenAI
   );
+  editorRef.current = editor;
 
   useEffect(() => {
     if (editor && onEditorReady) {
@@ -162,6 +199,20 @@ export function TipTapEditor({
     if (viewMode === 'edit') return '';
     return sanitizeMarkdown(content);
   }, [content, viewMode]);
+
+  // Handle clicking wikilinks in Preview Pane
+  const handlePreviewClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = (e.target as HTMLElement).closest('.wikilink-preview') as HTMLElement | null;
+      if (target && onOpenFileByName) {
+        const targetNote = target.getAttribute('data-target');
+        if (targetNote) {
+          onOpenFileByName(targetNote);
+        }
+      }
+    },
+    [onOpenFileByName]
+  );
 
   if (!editor) {
     return <div className="loading-container"><div className="loading-spinner"></div><p>Loading editor...</p></div>;
@@ -194,11 +245,14 @@ export function TipTapEditor({
                 <WikilinkAutocomplete
                   isOpen={wikilinkQuery.isOpen}
                   query={wikilinkQuery.query}
+                  relationPrefix={relationPrefix}
+                  noteQuery={noteQuery}
                   coords={wikilinkQuery.coords}
                   matchingFiles={matchingFiles}
                   selectedIndex={selectedIndex}
                   onSelectFile={(file) => handleInsertWikilink(file.name, editor)}
                   onCreateGhostLink={(name) => handleInsertWikilink(name, editor)}
+                  onSelectRelationPrefix={handleSelectRelationPrefix}
                   onClose={() => setWikilinkQuery(null)}
                 />
               )}
@@ -212,6 +266,7 @@ export function TipTapEditor({
             <div className="preview-document-container">
               <div
                 className="markdown-rendered"
+                onClick={handlePreviewClick}
                 dangerouslySetInnerHTML={{ __html: renderedHTML || '<p class="empty-preview">Nothing to preview yet. Start typing to see your rendered markdown.</p>' }}
               />
             </div>

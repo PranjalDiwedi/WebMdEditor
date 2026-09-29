@@ -299,6 +299,17 @@ function App() {
     setMobileMenuOpen(false);
   }, [openFile]);
 
+  const handleOpenFileByName = useCallback((name: string) => {
+    const clean = name.replace(/\.md$/i, '').trim().toLowerCase();
+    const found = recentFiles.find((f) => f.name.replace(/\.md$/i, '').trim().toLowerCase() === clean);
+    if (found) {
+      handleOpenFile(found.id);
+    } else {
+      setNewFileName(name.replace(/\.md$/i, '').trim());
+      setShowCreateModal(true);
+    }
+  }, [recentFiles, handleOpenFile]);
+
   const handleGoHome = useCallback(() => {
     closeAllTabs();
     setStorageProvider(null);
@@ -1053,6 +1064,7 @@ function App() {
                       viewMode={viewMode}
                       vaultFiles={recentFiles}
                       currentFileId={currentFile.id}
+                      onOpenFileByName={handleOpenFileByName}
                     />
                   </div>
                 )}
