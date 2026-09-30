@@ -155,6 +155,7 @@ export function NetworkCanvas({
   // Pan & Zoom transform state: { x, y, k (scale) }
   const transformRef = useRef<{ x: number; y: number; k: number }>({ x: 0, y: 0, k: 1 });
   const hasInitializedCenterRef = useRef(false);
+  const lastContainerDimRef = useRef<{ width: number; height: number } | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
 
   // Interaction refs
@@ -165,6 +166,11 @@ export function NetworkCanvas({
   const mouseDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const animationFrameIdRef = useRef<number | null>(null);
+
+  // Touch gesture tracking refs
+  const touchStartDistRef = useRef<number | null>(null);
+  const touchStartKRef = useRef<number>(1);
+  const touchMidpointRef = useRef<{ x: number; y: number } | null>(null);
 
   // Shift + Drag Interactive Linking refs
   const isConnectingRef = useRef(false);
@@ -291,16 +297,36 @@ export function NetworkCanvas({
       getNodeColor: getColor,
     } = renderStateRef.current;
 
-    // If center has not been initialized yet, center the graph perfectly in viewport!
-    if (!hasInitializedCenterRef.current) {
+    // Center initialization or dynamic center-shift on container dimension changes
+    if (!hasInitializedCenterRef.current && currentNodes.length > 0) {
       hasInitializedCenterRef.current = true;
-      const { cx, cy } = getGraphCentroid(currentNodes);
+      const { cx, cy, width: gW, height: gH } = getGraphCentroid(currentNodes);
+      let targetK = 0.85;
+      if (gW > 50 && gH > 50) {
+        const pad = 120;
+        const fitK = Math.min((rect.width - pad) / gW, (rect.height - pad) / gH);
+        targetK = Math.max(0.35, Math.min(1.0, fitK));
+      }
       transformRef.current = {
-        x: rect.width / 2 - cx * 0.85,
-        y: rect.height / 2 - cy * 0.85,
-        k: 0.85,
+        x: rect.width / 2 - cx * targetK,
+        y: rect.height / 2 - cy * targetK,
+        k: targetK,
       };
-      setZoomLevel(0.85);
+      setZoomLevel(targetK);
+      lastContainerDimRef.current = { width: rect.width, height: rect.height };
+    } else if (lastContainerDimRef.current) {
+      if (
+        Math.abs(lastContainerDimRef.current.width - rect.width) > 0.5 ||
+        Math.abs(lastContainerDimRef.current.height - rect.height) > 0.5
+      ) {
+        const deltaX = (rect.width - lastContainerDimRef.current.width) / 2;
+        const deltaY = (rect.height - lastContainerDimRef.current.height) / 2;
+        transformRef.current.x += deltaX;
+        transformRef.current.y += deltaY;
+        lastContainerDimRef.current = { width: rect.width, height: rect.height };
+      }
+    } else {
+      lastContainerDimRef.current = { width: rect.width, height: rect.height };
     }
 
     // Reset transform completely and clear in physical pixels
@@ -698,7 +724,7 @@ export function NetworkCanvas({
     requestRedraw();
   }, [theme, filters, hoveredNode, selectedNode, selectedEdge, activeFileId, requestRedraw]);
 
-  // Handle Canvas Resizing (High-DPI aware and auto-center on layout changes)
+  // Handle Canvas Resizing (High-DPI aware, dynamically centers graph across all container size changes)
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -718,16 +744,36 @@ export function NetworkCanvas({
       canvas.style.height = `${rect.height}px`;
     }
 
-    // If transform is uninitialized, center it perfectly to container middle!
-    if (!hasInitializedCenterRef.current) {
+    const currentNodes = renderStateRef.current.nodes;
+    if (!hasInitializedCenterRef.current && currentNodes.length > 0) {
       hasInitializedCenterRef.current = true;
-      const { cx, cy } = getGraphCentroid(renderStateRef.current.nodes);
+      const { cx, cy, width: gW, height: gH } = getGraphCentroid(currentNodes);
+      let targetK = 0.85;
+      if (gW > 50 && gH > 50) {
+        const pad = 120;
+        const fitK = Math.min((rect.width - pad) / gW, (rect.height - pad) / gH);
+        targetK = Math.max(0.35, Math.min(1.0, fitK));
+      }
       transformRef.current = {
-        x: rect.width / 2 - cx * 0.85,
-        y: rect.height / 2 - cy * 0.85,
-        k: 0.85,
+        x: rect.width / 2 - cx * targetK,
+        y: rect.height / 2 - cy * targetK,
+        k: targetK,
       };
-      setZoomLevel(0.85);
+      setZoomLevel(targetK);
+      lastContainerDimRef.current = { width: rect.width, height: rect.height };
+    } else if (lastContainerDimRef.current) {
+      if (
+        Math.abs(lastContainerDimRef.current.width - rect.width) > 0.5 ||
+        Math.abs(lastContainerDimRef.current.height - rect.height) > 0.5
+      ) {
+        const deltaX = (rect.width - lastContainerDimRef.current.width) / 2;
+        const deltaY = (rect.height - lastContainerDimRef.current.height) / 2;
+        transformRef.current.x += deltaX;
+        transformRef.current.y += deltaY;
+        lastContainerDimRef.current = { width: rect.width, height: rect.height };
+      }
+    } else {
+      lastContainerDimRef.current = { width: rect.width, height: rect.height };
     }
 
     requestRedraw();
@@ -1000,6 +1046,144 @@ export function NetworkCanvas({
     [getGraphCoords, findNodeAt, onOpenNode, onCreateGhostNote]
   );
 
+  // Touch Support (Single touch pan/drag & Two finger pinch-to-zoom)
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        isMouseDownRef.current = true;
+        mouseDownPosRef.current = { x: touch.clientX, y: touch.clientY };
+        const { x: gx, y: gy } = getGraphCoords(touch.clientX, touch.clientY);
+        const hitNode = findNodeAt(gx, gy);
+        if (hitNode) {
+          dragNodeRef.current = hitNode;
+          isDraggingRef.current = false;
+        } else {
+          isPanningRef.current = true;
+          panStartRef.current = {
+            x: touch.clientX - transformRef.current.x,
+            y: touch.clientY - transformRef.current.y,
+          };
+        }
+      } else if (e.touches.length === 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        touchStartDistRef.current = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        touchStartKRef.current = transformRef.current.k;
+        touchMidpointRef.current = {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2,
+        };
+        isPanningRef.current = false;
+        isDraggingRef.current = false;
+      }
+    },
+    [getGraphCoords, findNodeAt]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      if (e.touches.length === 1 && isMouseDownRef.current) {
+        const touch = e.touches[0];
+        const { x: gx, y: gy } = getGraphCoords(touch.clientX, touch.clientY);
+
+        if (dragNodeRef.current) {
+          const dx = touch.clientX - mouseDownPosRef.current.x;
+          const dy = touch.clientY - mouseDownPosRef.current.y;
+          const dist = Math.hypot(dx, dy);
+
+          if (!isDraggingRef.current && dist > 4) {
+            isDraggingRef.current = true;
+            dragNodeRef.current.fx = dragNodeRef.current.x;
+            dragNodeRef.current.fy = dragNodeRef.current.y;
+            simulationRef.current?.alphaTarget(0.15).restart();
+          }
+
+          if (isDraggingRef.current) {
+            dragNodeRef.current.fx = gx;
+            dragNodeRef.current.fy = gy;
+            requestRedraw();
+          }
+        } else if (isPanningRef.current) {
+          transformRef.current.x = touch.clientX - panStartRef.current.x;
+          transformRef.current.y = touch.clientY - panStartRef.current.y;
+          requestRedraw();
+        }
+      } else if (e.touches.length === 2 && touchStartDistRef.current && touchMidpointRef.current) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const scale = currentDist / touchStartDistRef.current;
+        const newK = Math.max(0.15, Math.min(4.0, touchStartKRef.current * scale));
+
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect();
+          const midX = touchMidpointRef.current.x - rect.left;
+          const midY = touchMidpointRef.current.y - rect.top;
+          const current = transformRef.current;
+
+          const newX = midX - (midX - current.x) * (newK / current.k);
+          const newY = midY - (midY - current.y) * (newK / current.k);
+
+          transformRef.current = { x: newX, y: newY, k: newK };
+          setZoomLevel(newK);
+          requestRedraw();
+        }
+      }
+    },
+    [getGraphCoords, requestRedraw]
+  );
+
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      touchStartDistRef.current = null;
+      touchMidpointRef.current = null;
+
+      if (isDraggingRef.current && dragNodeRef.current) {
+        dragNodeRef.current.fx = null;
+        dragNodeRef.current.fy = null;
+        isDraggingRef.current = false;
+        dragNodeRef.current = null;
+        simulationRef.current?.alphaTarget(0);
+      } else if (isMouseDownRef.current && e.changedTouches.length === 1) {
+        const touch = e.changedTouches[0];
+        const { x: gx, y: gy } = getGraphCoords(touch.clientX, touch.clientY);
+        const hitNode = findNodeAt(gx, gy);
+        if (hitNode) {
+          onSelectEdge(null, null);
+          if (selectedNode?.id === hitNode.id) {
+            onSelectNode(null);
+          } else {
+            onSelectNode(hitNode);
+          }
+        } else {
+          const hitEdge = findEdgeAt(gx, gy, 8 / transformRef.current.k);
+          if (hitEdge) {
+            onSelectNode(null);
+            if (selectedEdge?.id === hitEdge.id) {
+              onSelectEdge(null, null);
+            } else {
+              onSelectEdge(hitEdge, { x: touch.clientX, y: touch.clientY });
+            }
+          } else {
+            const dx = Math.abs(touch.clientX - mouseDownPosRef.current.x);
+            const dy = Math.abs(touch.clientY - mouseDownPosRef.current.y);
+            if (dx < 10 && dy < 10) {
+              onSelectNode(null);
+              onSelectEdge(null, null);
+            }
+          }
+        }
+      }
+
+      isMouseDownRef.current = false;
+      isPanningRef.current = false;
+      dragNodeRef.current = null;
+    },
+    [getGraphCoords, findNodeAt, findEdgeAt, selectedNode, selectedEdge, onSelectNode, onSelectEdge]
+  );
+
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLCanvasElement>) => {
       e.preventDefault();
@@ -1048,6 +1232,7 @@ export function NetworkCanvas({
       y: rect.height / 2 - cy * targetK,
       k: targetK,
     };
+    lastContainerDimRef.current = { width: rect.width, height: rect.height };
     setZoomLevel(targetK);
     requestRedraw();
   }, [requestRedraw]);
@@ -1063,6 +1248,10 @@ export function NetworkCanvas({
         onMouseLeave={handleMouseUp}
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
       />
 
       {/* Floating Canvas Navigation Utilities & Translucent Gesture Hint */}
