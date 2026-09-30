@@ -797,202 +797,205 @@ function App() {
                 )}
               </div>
 
-              {/* View Mode Switcher in Header (when a file or vault is active) */}
-              {(currentFile || recentFiles.length > 0) && (
-                <div className="header-center">
-                  <div className="view-mode-switcher">
-                    <button
-                      type="button"
-                      className={`view-mode-btn ${viewMode === 'edit' ? 'active' : ''}`}
-                      onClick={() => setViewMode('edit')}
-                      title="Edit Mode"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                      <span>Edit</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`view-mode-btn ${viewMode === 'split' ? 'active' : ''}`}
-                      onClick={() => setViewMode('split')}
-                      title={`Split View (${modSymbol}P)`}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4H5a2 2 0 00-2 2v12a2 2 0 002 2h4m6-16h4a2 2 0 012 2v12a2 2 0 01-2 2h-4m-3-16v16" />
-                      </svg>
-                      <span>Split</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`view-mode-btn ${viewMode === 'preview' ? 'active' : ''}`}
-                      onClick={() => setViewMode('preview')}
-                      title="Reader Preview"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                      <span>Preview</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`view-mode-btn ${viewMode === 'network' ? 'active' : ''}`}
-                      onClick={() => setViewMode('network')}
-                      title="Knowledge Network Graph (Betweenness Centrality)"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <circle cx="6" cy="6" r="2.5" strokeWidth={2} />
-                        <circle cx="18" cy="6" r="2.5" strokeWidth={2} />
-                        <circle cx="12" cy="18" r="2.5" strokeWidth={2} />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8.5 6h7M7.5 8.5l3 7M16.5 8.5l-3 7" />
-                      </svg>
-                      <span>Network</span>
-                    </button>
+              {/* Scrollable Track for Header Actions (Options to the right of Mandrak) */}
+              <div className="header-scroll-container">
+                {/* View Mode Switcher in Header (when a file or vault is active) */}
+                {(currentFile || recentFiles.length > 0) && (
+                  <div className="header-center">
+                    <div className="view-mode-switcher">
+                      <button
+                        type="button"
+                        className={`view-mode-btn ${viewMode === 'edit' ? 'active' : ''}`}
+                        onClick={() => setViewMode('edit')}
+                        title="Edit Mode"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`view-mode-btn ${viewMode === 'split' ? 'active' : ''}`}
+                        onClick={() => setViewMode('split')}
+                        title={`Split View (${modSymbol}P)`}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4H5a2 2 0 00-2 2v12a2 2 0 002 2h4m6-16h4a2 2 0 012 2v12a2 2 0 01-2 2h-4m-3-16v16" />
+                        </svg>
+                        <span>Split</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`view-mode-btn ${viewMode === 'preview' ? 'active' : ''}`}
+                        onClick={() => setViewMode('preview')}
+                        title="Reader Preview"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        <span>Preview</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`view-mode-btn ${viewMode === 'network' ? 'active' : ''}`}
+                        onClick={() => setViewMode('network')}
+                        title="Knowledge Network Graph (Betweenness Centrality)"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <circle cx="6" cy="6" r="2.5" strokeWidth={2} />
+                          <circle cx="18" cy="6" r="2.5" strokeWidth={2} />
+                          <circle cx="12" cy="18" r="2.5" strokeWidth={2} />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8.5 6h7M7.5 8.5l3 7M16.5 8.5l-3 7" />
+                        </svg>
+                        <span>Network</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div className="header-right">
-                {/* AI Assistant Icon Button (Smart 2-Step Trigger) */}
-                <button
-                  type="button"
-                  className={`icon-btn ${isAIConnected ? 'ai-active' : ''}`}
-                  onClick={() => {
-                    if (!isAIConnected) {
-                      openAIModal();
-                    } else {
-                      setIsInlineMenuOpen(true);
+                <div className="header-right">
+                  {/* AI Assistant Icon Button (Smart 2-Step Trigger) */}
+                  <button
+                    type="button"
+                    className={`icon-btn ${isAIConnected ? 'ai-active' : ''}`}
+                    onClick={() => {
+                      if (!isAIConnected) {
+                        openAIModal();
+                      } else {
+                        setIsInlineMenuOpen(true);
+                      }
+                    }}
+                    title={
+                      isAIConnected && aiConfig
+                        ? `AI Assistant (${aiConfig.provider.toUpperCase()}: ${aiConfig.model}) — Click to Open Assistant (${modSymbol}J)`
+                        : 'AI Assistant (BYOK) — Click to Configure API Key'
                     }
-                  }}
-                  title={
-                    isAIConnected && aiConfig
-                      ? `AI Assistant (${aiConfig.provider.toUpperCase()}: ${aiConfig.model}) — Click to Open Assistant (${modSymbol}J)`
-                      : 'AI Assistant (BYOK) — Click to Configure API Key'
-                  }
-                  aria-label="AI Assistant"
-                  style={{ position: 'relative' }}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"
-                    />
-                  </svg>
-                  {isAIConnected && (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: '4px',
-                        right: '4px',
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--success, #22c55e)',
-                        boxShadow: '0 0 4px var(--success, #22c55e)',
-                      }}
-                    />
-                  )}
-                </button>
-
-                {/* Spotlight / Command Palette Button */}
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() => setIsCommandPaletteOpen(true)}
-                  title={`Command Palette (${modSymbol}K)`}
-                  aria-label="Command Palette"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2.2}
-                      d="M4 5l8 7-8 7M14 19h7"
-                    />
-                  </svg>
-                </button>
-
-                {/* Focus / Zen Mode Toggle */}
-                <button
-                  type="button"
-                  className={`icon-btn ${isZenMode ? 'active' : ''}`}
-                  onClick={() => setIsZenMode((prev) => !prev)}
-                  title={`Focus / Zen Mode (${modSymbol}⇧F)`}
-                  aria-label="Toggle Focus Mode"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                  </svg>
-                </button>
-
-                {/* 1-Click Sun/Moon Theme Switcher */}
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={toggleTheme}
-                  title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
-                  aria-label="Toggle theme"
-                >
-                  {theme === 'light' ? (
+                    aria-label="AI Assistant"
+                    style={{ position: 'relative' }}
+                  >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"
+                      />
                     </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
-                  )}
-                </button>
-
-                {/* Export Dropdown */}
-                {currentFile && (
-                  <div className="export-menu">
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      onClick={() => setShowExportMenu(!showExportMenu)}
-                      title="Export Note"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                      </svg>
-                    </button>
-                    {showExportMenu && (
-                      <div className="export-dropdown">
-                        <div className="export-dropdown-item" onClick={handleExportMarkdown}>
-                          <span>📄</span> Export as Markdown
-                        </div>
-                        <div className="export-dropdown-item" onClick={handleExportHTML}>
-                          <span>🌐</span> Export as HTML
-                        </div>
-                        <div className="export-dropdown-item" onClick={handleCopyRichText}>
-                          <span>📋</span> Copy as Rich Text
-                        </div>
-                        <div className="export-dropdown-item" onClick={handlePrint}>
-                          <span>🖨️</span> Print / PDF
-                        </div>
-                      </div>
+                    {isAIConnected && (
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: '4px',
+                          right: '4px',
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          backgroundColor: 'var(--success, #22c55e)',
+                          boxShadow: '0 0 4px var(--success, #22c55e)',
+                        }}
+                      />
                     )}
-                  </div>
-                )}
+                  </button>
 
-                {/* Settings Gear */}
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() => setShowSettings(true)}
-                  title="Settings & Shortcuts"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                </button>
+                  {/* Spotlight / Command Palette Button */}
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => setIsCommandPaletteOpen(true)}
+                    title={`Command Palette (${modSymbol}K)`}
+                    aria-label="Command Palette"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2.2}
+                        d="M4 5l8 7-8 7M14 19h7"
+                      />
+                    </svg>
+                  </button>
 
-                {isAuthenticated && user && (
-                  <SignOut onSignOut={signOut} user={user} />
-                )}
+                  {/* Focus / Zen Mode Toggle */}
+                  <button
+                    type="button"
+                    className={`icon-btn ${isZenMode ? 'active' : ''}`}
+                    onClick={() => setIsZenMode((prev) => !prev)}
+                    title={`Focus / Zen Mode (${modSymbol}⇧F)`}
+                    aria-label="Toggle Focus Mode"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                  </button>
+
+                  {/* 1-Click Sun/Moon Theme Switcher */}
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={toggleTheme}
+                    title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
+                    aria-label="Toggle theme"
+                  >
+                    {theme === 'light' ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                    )}
+                  </button>
+
+                  {/* Export Dropdown */}
+                  {currentFile && (
+                    <div className="export-menu">
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => setShowExportMenu(!showExportMenu)}
+                        title="Export Note"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                      </button>
+                      {showExportMenu && (
+                        <div className="export-dropdown">
+                          <div className="export-dropdown-item" onClick={handleExportMarkdown}>
+                            <span>📄</span> Export as Markdown
+                          </div>
+                          <div className="export-dropdown-item" onClick={handleExportHTML}>
+                            <span>🌐</span> Export as HTML
+                          </div>
+                          <div className="export-dropdown-item" onClick={handleCopyRichText}>
+                            <span>📋</span> Copy as Rich Text
+                          </div>
+                          <div className="export-dropdown-item" onClick={handlePrint}>
+                            <span>🖨️</span> Print / PDF
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Settings Gear */}
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => setShowSettings(true)}
+                    title="Settings & Shortcuts"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </button>
+
+                  {isAuthenticated && user && (
+                    <SignOut onSignOut={signOut} user={user} />
+                  )}
+                </div>
               </div>
             </header>
           }

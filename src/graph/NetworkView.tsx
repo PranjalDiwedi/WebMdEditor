@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { MarkdownFile } from '../types/file';
 import type {
   GraphNode,
@@ -74,6 +74,34 @@ export function NetworkView({
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   const [selectedEdgeCoords, setSelectedEdgeCoords] = useState<{ x: number; y: number } | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
+  // Expandable Search state
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Keyboard shortcut: Cmd+F / Ctrl+F or '/' to focus graph search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Avoid intercepting when typing in inputs/textareas
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setIsSearchExpanded(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      } else if (e.key === '/' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setIsSearchExpanded(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Creating new relationship via Shift + Drag
   const [connectingEdgeData, setConnectingEdgeData] = useState<{
@@ -377,37 +405,6 @@ export function NetworkView({
           <div className="network-title-cluster">
             <span className="network-brand-icon">🕸️</span>
             <span className="network-brand-title">Knowledge Network</span>
-            <span className="network-badge-counter">
-              {filteredGraph.nodes.length} nodes · {filteredGraph.edges.length} edges
-            </span>
-          </div>
-
-          {/* Quick Search */}
-          <div className="network-search-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search or highlight nodes..."
-              value={filters.searchQuery}
-              onChange={(e) => setFilters({ ...filters, searchQuery: e.target.value })}
-            />
-            {filters.searchQuery && (
-              <button
-                type="button"
-                className="network-search-clear"
-                onClick={() => setFilters({ ...filters, searchQuery: '' })}
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          {/* Shift + Drag Hint Pill */}
-          <div className="network-gesture-hint" title="Hold Shift and drag from one note to another to create a wikilink">
-            <span>💡</span>
-            <span>Hold <strong>Shift + Drag</strong> to connect notes</span>
           </div>
         </div>
 
@@ -419,28 +416,74 @@ export function NetworkView({
             </div>
           )}
 
-          {/* Active Sizing Pill */}
-          <div className="network-indicator-pill" title="Metric used to size nodes">
-            <span className="pill-dot"></span>
-            <span>
-              Sized by{' '}
-              <strong style={{ textTransform: 'capitalize' }}>
-                {filters.sizingMode === 'betweenness' ? 'Betweenness Centrality' : filters.sizingMode}
-              </strong>
-            </span>
+          {/* Expandable Search Button & Input */}
+          <div className={`network-expandable-search ${isSearchExpanded || filters.searchQuery ? 'expanded' : ''}`}>
+            {!isSearchExpanded && !filters.searchQuery ? (
+              <button
+                type="button"
+                className="network-search-icon-btn"
+                onClick={() => {
+                  setIsSearchExpanded(true);
+                  setTimeout(() => searchInputRef.current?.focus(), 50);
+                }}
+                title="Search graph nodes (Cmd+F / /)"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="15" height="15">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
+            ) : (
+              <div className="network-search-expanded-bar">
+                <svg className="network-search-icon-inside" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search nodes..."
+                  value={filters.searchQuery}
+                  onChange={(e) => setFilters({ ...filters, searchQuery: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      if (filters.searchQuery) {
+                        setFilters({ ...filters, searchQuery: '' });
+                      } else {
+                        setIsSearchExpanded(false);
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!filters.searchQuery) {
+                      setIsSearchExpanded(false);
+                    }
+                  }}
+                  autoFocus
+                />
+                {filters.searchQuery ? (
+                  <button
+                    type="button"
+                    className="network-search-clear"
+                    onClick={() => {
+                      setFilters({ ...filters, searchQuery: '' });
+                      searchInputRef.current?.focus();
+                    }}
+                    title="Clear search"
+                  >
+                    ✕
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="network-search-collapse"
+                    onClick={() => setIsSearchExpanded(false)}
+                    title="Close search"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-
-          {currentFile && (
-            <button
-              type="button"
-              className={`network-ego-btn ${filters.localGraphMode ? 'active' : ''}`}
-              onClick={() => setFilters({ ...filters, localGraphMode: !filters.localGraphMode })}
-              title="Toggle local graph centered on currently open note"
-            >
-              <span>🎯</span>
-              <span>{filters.localGraphMode ? 'Local Graph (Active)' : 'Focus Note'}</span>
-            </button>
-          )}
 
           {onExitView && (
             <button
@@ -488,6 +531,7 @@ export function NetworkView({
           totalEdges={stats.totalLinks}
           orphanCount={stats.orphanCount}
           bridgeNoteCount={stats.bridgeNoteCount}
+          currentFile={currentFile}
         />
 
         {/* Floating Edge Action Card (Click Edge to View / Edit / Unlink) */}

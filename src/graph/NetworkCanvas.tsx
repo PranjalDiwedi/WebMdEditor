@@ -255,13 +255,27 @@ export function NetworkCanvas({
     };
   });
 
-  // Pure Canvas Paint Function (never triggers physics)
+  // Pure Canvas Paint Function (never triggers physics or forced reflow)
   const drawFrame = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    const rect = container.getBoundingClientRect();
+    if (rect.width <= 10 || rect.height <= 10) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const expectedWidth = Math.round(rect.width * dpr);
+    const expectedHeight = Math.round(rect.height * dpr);
+
+    if (canvas.width !== expectedWidth || canvas.height !== expectedHeight) {
+      canvas.width = expectedWidth;
+      canvas.height = expectedHeight;
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+    }
 
     const {
       nodes: currentNodes,
@@ -276,20 +290,6 @@ export function NetworkCanvas({
       getNodeRadius: getRadius,
       getNodeColor: getColor,
     } = renderStateRef.current;
-
-    const dpr = window.devicePixelRatio || 1;
-    const rect = container.getBoundingClientRect();
-    if (rect.width <= 50 || rect.height <= 50) return;
-
-    // Ensure canvas internal pixel buffer matches actual container layout dimensions
-    const expectedWidth = Math.round(rect.width * dpr);
-    const expectedHeight = Math.round(rect.height * dpr);
-    if (canvas.width !== expectedWidth || canvas.height !== expectedHeight) {
-      canvas.width = expectedWidth;
-      canvas.height = expectedHeight;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-    }
 
     // If center has not been initialized yet, center the graph perfectly in viewport!
     if (!hasInitializedCenterRef.current) {
@@ -306,6 +306,8 @@ export function NetworkCanvas({
     // Reset transform completely and clear in physical pixels
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
 
     // Apply High-DPI DPR scaling
     ctx.scale(dpr, dpr);
@@ -476,21 +478,17 @@ export function NetworkCanvas({
       // Glow halo for Selected, Active, Top Bridge, or Hovered nodes
       if (!isDimmed && (isSelected || isHovered || isActiveFile || (isTopBridge && k > 0.6))) {
         const glowRadius = radius + (isHovered || isSelected || isActiveFile ? 8 : 5);
-        const gradient = ctx.createRadialGradient(
-          node.x,
-          node.y,
-          radius,
-          node.x,
-          node.y,
-          glowRadius
-        );
-        const glowColor = isSelected ? '#6366f1' : isActiveFile ? '#06b6d4' : isHovered ? '#38bdf8' : '#f59e0b';
-        gradient.addColorStop(0, `${glowColor}88`);
-        gradient.addColorStop(1, `${glowColor}00`);
+        const glowColor = isSelected
+          ? 'rgba(99, 102, 241, 0.35)'
+          : isActiveFile
+          ? 'rgba(6, 182, 212, 0.35)'
+          : isHovered
+          ? 'rgba(56, 189, 248, 0.35)'
+          : 'rgba(245, 158, 11, 0.28)';
 
         ctx.beginPath();
         ctx.arc(node.x, node.y, glowRadius, 0, 2 * Math.PI);
-        ctx.fillStyle = gradient;
+        ctx.fillStyle = glowColor;
         ctx.fill();
       }
 
@@ -624,8 +622,11 @@ export function NetworkCanvas({
 
   // Safe animation frame trigger
   const requestRedraw = useCallback(() => {
-    if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
-    animationFrameIdRef.current = requestAnimationFrame(drawFrame);
+    if (animationFrameIdRef.current) return;
+    animationFrameIdRef.current = requestAnimationFrame(() => {
+      animationFrameIdRef.current = null;
+      drawFrame();
+    });
   }, [drawFrame]);
 
   // Set up & run d3-force simulation smoothly in-place
@@ -685,7 +686,10 @@ export function NetworkCanvas({
     return () => {
       simulationRef.current?.stop();
       simulationRef.current = null;
-      if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
+      }
     };
   }, []);
 
@@ -694,76 +698,61 @@ export function NetworkCanvas({
     requestRedraw();
   }, [theme, filters, hoveredNode, selectedNode, selectedEdge, activeFileId, requestRedraw]);
 
-  // Synchronous pre-paint viewport sizing & centering
-  useLayoutEffect(() => {
+  // Handle Canvas Resizing (High-DPI aware and auto-center on layout changes)
+  const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
 
     const rect = container.getBoundingClientRect();
+    if (rect.width <= 10 || rect.height <= 10) return;
+
     const dpr = window.devicePixelRatio || 1;
 
-    if (rect.width > 50 && rect.height > 50) {
-      canvas.width = Math.round(rect.width * dpr);
-      canvas.height = Math.round(rect.height * dpr);
+    const expectedWidth = Math.round(rect.width * dpr);
+    const expectedHeight = Math.round(rect.height * dpr);
+    if (canvas.width !== expectedWidth || canvas.height !== expectedHeight) {
+      canvas.width = expectedWidth;
+      canvas.height = expectedHeight;
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
-
-      if (!hasInitializedCenterRef.current) {
-        hasInitializedCenterRef.current = true;
-        const { cx, cy } = getGraphCentroid(nodes);
-        transformRef.current = {
-          x: rect.width / 2 - cx * 0.85,
-          y: rect.height / 2 - cy * 0.85,
-          k: 0.85,
-        };
-        setZoomLevel(0.85);
-      }
     }
-  }, [nodes]);
 
-  // Handle Canvas Resizing (High-DPI aware and auto-center on layout changes)
+    // If transform is uninitialized, center it perfectly to container middle!
+    if (!hasInitializedCenterRef.current) {
+      hasInitializedCenterRef.current = true;
+      const { cx, cy } = getGraphCentroid(renderStateRef.current.nodes);
+      transformRef.current = {
+        x: rect.width / 2 - cx * 0.85,
+        y: rect.height / 2 - cy * 0.85,
+        k: 0.85,
+      };
+      setZoomLevel(0.85);
+    }
+
+    requestRedraw();
+  }, [requestRedraw]);
+
+  useLayoutEffect(() => {
+    handleResize();
+  }, [handleResize, nodes]);
+
   useEffect(() => {
-    const handleResize = () => {
-      const canvas = canvasRef.current;
-      const container = containerRef.current;
-      if (!canvas || !container) return;
-
-      const dpr = window.devicePixelRatio || 1;
-      const rect = container.getBoundingClientRect();
-      if (rect.width <= 50 || rect.height <= 50) return;
-
-      canvas.width = Math.round(rect.width * dpr);
-      canvas.height = Math.round(rect.height * dpr);
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-
-      // If transform is uninitialized, center it perfectly to container middle!
-      if (!hasInitializedCenterRef.current) {
-        hasInitializedCenterRef.current = true;
-        const { cx, cy } = getGraphCentroid(renderStateRef.current.nodes);
-        transformRef.current = {
-          x: rect.width / 2 - cx * 0.85,
-          y: rect.height / 2 - cy * 0.85,
-          k: 0.85,
-        };
-        setZoomLevel(0.85);
-      }
-
-      requestRedraw();
-    };
+    const container = containerRef.current;
+    if (!container) return;
 
     handleResize();
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+    resizeObserver.observe(container);
     window.addEventListener('resize', handleResize);
-    const resizeObserver = new ResizeObserver(handleResize);
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
+
     return () => {
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
     };
-  }, [requestRedraw]);
+  }, [handleResize]);
 
   // Convert Screen Mouse Coords to Virtual Graph Coords
   const getGraphCoords = useCallback((clientX: number, clientY: number) => {
@@ -969,15 +958,19 @@ export function NetworkCanvas({
           }
         } else {
           // Check if edge was clicked
-          const hitEdge = findEdgeAt(gx, gy, 7 / transformRef.current.k);
+          const hitEdge = findEdgeAt(gx, gy, 6 / transformRef.current.k);
           if (hitEdge) {
             onSelectNode(null);
-            onSelectEdge(hitEdge, { x: e.clientX, y: e.clientY });
+            if (selectedEdge?.id === hitEdge.id) {
+              onSelectEdge(null, null);
+            } else {
+              onSelectEdge(hitEdge, { x: e.clientX, y: e.clientY });
+            }
           } else {
             // Clicked empty background
             const dx = Math.abs(e.clientX - mouseDownPosRef.current.x);
             const dy = Math.abs(e.clientY - mouseDownPosRef.current.y);
-            if (dx < 4 && dy < 4) {
+            if (dx < 10 && dy < 10) {
               onSelectNode(null);
               onSelectEdge(null, null);
             }
@@ -988,7 +981,7 @@ export function NetworkCanvas({
       dragNodeRef.current = null;
       isPanningRef.current = false;
     },
-    [getGraphCoords, findNodeAt, findEdgeAt, selectedNode, onSelectNode, onSelectEdge, onConnectNodes, requestRedraw]
+    [getGraphCoords, findNodeAt, findEdgeAt, selectedNode, selectedEdge, onSelectNode, onSelectEdge, onConnectNodes, requestRedraw]
   );
 
   // Native Double-Click Event Handler
@@ -1072,61 +1065,71 @@ export function NetworkCanvas({
         onWheel={handleWheel}
       />
 
-      {/* Floating Canvas Navigation Utilities */}
-      <div className="network-zoom-controls">
-        <button
-          type="button"
-          className="network-zoom-btn"
-          title="Zoom In"
-          onClick={() => {
-            const current = transformRef.current;
-            const container = containerRef.current;
-            const rect = container?.getBoundingClientRect();
-            const width = rect && rect.width > 0 ? rect.width : window.innerWidth;
-            const height = rect && rect.height > 0 ? rect.height : window.innerHeight;
-            const newK = Math.min(4.0, current.k * 1.25);
-            const centerX = width / 2;
-            const centerY = height / 2;
-            const newX = centerX - (centerX - current.x) * (newK / current.k);
-            const newY = centerY - (centerY - current.y) * (newK / current.k);
-            transformRef.current = { x: newX, y: newY, k: newK };
-            setZoomLevel(newK);
-            requestRedraw();
-          }}
+      {/* Floating Canvas Navigation Utilities & Translucent Gesture Hint */}
+      <div className="network-canvas-bottom-left">
+        <div
+          className="network-canvas-hint-pill"
+          title="Hold Shift and drag from one note to another to create a wikilink"
         >
-          +
-        </button>
-        <span className="network-zoom-text">{Math.round(zoomLevel * 100)}%</span>
-        <button
-          type="button"
-          className="network-zoom-btn"
-          title="Zoom Out"
-          onClick={() => {
-            const current = transformRef.current;
-            const container = containerRef.current;
-            const rect = container?.getBoundingClientRect();
-            const width = rect && rect.width > 0 ? rect.width : window.innerWidth;
-            const height = rect && rect.height > 0 ? rect.height : window.innerHeight;
-            const newK = Math.max(0.15, current.k * 0.8);
-            const centerX = width / 2;
-            const centerY = height / 2;
-            const newX = centerX - (centerX - current.x) * (newK / current.k);
-            const newY = centerY - (centerY - current.y) * (newK / current.k);
-            transformRef.current = { x: newX, y: newY, k: newK };
-            setZoomLevel(newK);
-            requestRedraw();
-          }}
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="network-zoom-btn"
-          title="Fit & Recenter View"
-          onClick={handleResetZoom}
-        >
-          🎯
-        </button>
+          <span>💡</span>
+          <span>Hold <strong>Shift + Drag</strong> to link notes</span>
+        </div>
+
+        <div className="network-zoom-controls">
+          <button
+            type="button"
+            className="network-zoom-btn"
+            title="Zoom In"
+            onClick={() => {
+              const current = transformRef.current;
+              const container = containerRef.current;
+              const rect = container?.getBoundingClientRect();
+              const width = rect && rect.width > 0 ? rect.width : window.innerWidth;
+              const height = rect && rect.height > 0 ? rect.height : window.innerHeight;
+              const newK = Math.min(4.0, current.k * 1.25);
+              const centerX = width / 2;
+              const centerY = height / 2;
+              const newX = centerX - (centerX - current.x) * (newK / current.k);
+              const newY = centerY - (centerY - current.y) * (newK / current.k);
+              transformRef.current = { x: newX, y: newY, k: newK };
+              setZoomLevel(newK);
+              requestRedraw();
+            }}
+          >
+            +
+          </button>
+          <span className="network-zoom-text">{Math.round(zoomLevel * 100)}%</span>
+          <button
+            type="button"
+            className="network-zoom-btn"
+            title="Zoom Out"
+            onClick={() => {
+              const current = transformRef.current;
+              const container = containerRef.current;
+              const rect = container?.getBoundingClientRect();
+              const width = rect && rect.width > 0 ? rect.width : window.innerWidth;
+              const height = rect && rect.height > 0 ? rect.height : window.innerHeight;
+              const newK = Math.max(0.15, current.k * 0.8);
+              const centerX = width / 2;
+              const centerY = height / 2;
+              const newX = centerX - (centerX - current.x) * (newK / current.k);
+              const newY = centerY - (centerY - current.y) * (newK / current.k);
+              transformRef.current = { x: newX, y: newY, k: newK };
+              setZoomLevel(newK);
+              requestRedraw();
+            }}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="network-zoom-btn"
+            title="Fit & Recenter View"
+            onClick={handleResetZoom}
+          >
+            🎯
+          </button>
+        </div>
       </div>
     </div>
   );

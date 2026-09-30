@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import type { MarkdownFile } from '../types/file';
 import type {
   GraphFilterOptions,
   PhysicsConfig,
@@ -18,6 +19,7 @@ interface NetworkControlsProps {
   totalEdges: number;
   orphanCount: number;
   bridgeNoteCount: number;
+  currentFile?: MarkdownFile | null;
 }
 
 export function NetworkControls({
@@ -32,9 +34,52 @@ export function NetworkControls({
   totalEdges,
   orphanCount,
   bridgeNoteCount,
+  currentFile,
 }: NetworkControlsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'display' | 'filters' | 'physics'>('display');
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  // Calculate active non-default filters / customizations
+  const activeFilterCount =
+    filters.selectedFolders.length +
+    filters.selectedTags.length +
+    filters.selectedRelations.length +
+    (filters.orphansOnly ? 1 : 0) +
+    (!filters.showGhostNotes ? 1 : 0) +
+    (filters.showTagConnections ? 1 : 0) +
+    (filters.showEdgeLabels ? 1 : 0) +
+    (filters.sizingMode !== 'betweenness' ? 1 : 0) +
+    (filters.coloringMode !== 'folder' ? 1 : 0);
+
+  const hasActiveFilters = activeFilterCount > 0;
+
+  // Close drawer on click outside or Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
 
   const updateFilters = (partial: Partial<GraphFilterOptions>) => {
     onFilterChange({ ...filters, ...partial });
@@ -69,27 +114,66 @@ export function NetworkControls({
   };
 
   return (
-    <div className={`network-controls-wrapper ${isOpen ? 'open' : ''}`}>
-      {/* Toggle Button */}
-      <button
-        type="button"
-        className="network-controls-toggle-btn"
-        onClick={() => setIsOpen(!isOpen)}
-        title={isOpen ? 'Collapse Graph Settings' : 'Expand Graph Settings'}
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-          />
-        </svg>
-        <span>Graph Settings</span>
-        <span className="network-pill-stats">
-          {totalNodes} notes · {totalEdges} links
-        </span>
-      </button>
+    <div ref={wrapperRef} className={`network-controls-wrapper ${isOpen ? 'open' : ''}`}>
+      {/* Floating Island Buttons Group */}
+      <div className="network-island-buttons">
+        {currentFile && (
+          <button
+            type="button"
+            className={`network-island-btn network-ego-btn ${filters.localGraphMode ? 'active' : ''}`}
+            onClick={() => updateFilters({ localGraphMode: !filters.localGraphMode })}
+            title={
+              filters.localGraphMode
+                ? 'Exit Local Graph (Show entire vault network)'
+                : `Focus graph centered on "${currentFile.name}"`
+            }
+          >
+            <span className="network-btn-icon">🎯</span>
+            <span>{filters.localGraphMode ? 'Local Graph' : 'Focus Note'}</span>
+          </button>
+        )}
+
+        {/* Toggle Settings Button */}
+        <button
+          type="button"
+          className={`network-controls-toggle-btn ${hasActiveFilters ? 'has-active-filters' : ''}`}
+          onClick={() => setIsOpen(!isOpen)}
+          title={
+            isOpen
+              ? 'Collapse Graph Settings'
+              : hasActiveFilters
+              ? `Expand Graph Settings (${activeFilterCount} active filter${activeFilterCount > 1 ? 's' : ''})`
+              : 'Expand Graph Settings'
+          }
+        >
+          <div className="network-settings-icon-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+              />
+            </svg>
+            {hasActiveFilters && (
+              <span
+                className="network-filter-indicator-dot"
+                title={`${activeFilterCount} active custom filter${activeFilterCount > 1 ? 's' : ''}`}
+              />
+            )}
+          </div>
+          <span>Graph Settings</span>
+          {hasActiveFilters ? (
+            <span className="network-active-filter-badge" title="Active filters applied">
+              {activeFilterCount} active
+            </span>
+          ) : (
+            <span className="network-pill-stats">
+              {totalNodes} notes · {totalEdges} links
+            </span>
+          )}
+        </button>
+      </div>
 
       {/* Floating Settings Drawer Panel */}
       {isOpen && (
@@ -109,6 +193,13 @@ export function NetworkControls({
               onClick={() => setActiveTab('filters')}
             >
               🔍 Filters
+              {(filters.selectedFolders.length > 0 ||
+                filters.selectedTags.length > 0 ||
+                filters.selectedRelations.length > 0 ||
+                filters.orphansOnly ||
+                !filters.showGhostNotes) && (
+                <span className="network-tab-active-dot" title="Active filters" />
+              )}
             </button>
             <button
               type="button"

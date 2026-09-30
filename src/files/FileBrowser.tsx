@@ -497,11 +497,14 @@ export function FileBrowser({
       >
         <div className="file-card-header">
           <div className="file-card-title-group">
+            <svg className="file-card-doc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
             {file.isPinned && <span className="pin-badge" title="Pinned Note">📌</span>}
             <span className="file-card-title">{displayName}</span>
             {file.isMoving && <span className="file-moving-badge" title="Moving to new folder...">Moving...</span>}
           </div>
-          <span className="file-card-time">{formatRelativeTime(file.modifiedAt)}</span>
+          <span className="file-card-time-pill">{formatRelativeTime(file.modifiedAt)}</span>
         </div>
 
         {isPreviewLoading ? (
